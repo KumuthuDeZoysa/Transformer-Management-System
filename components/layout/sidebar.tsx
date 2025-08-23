@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Zap, Plus, Upload, Images, Settings, Menu, X, Table as TableIcon, ListChecks } from "lucide-react"
+import { Zap, Plus, Upload, Images, Settings, Menu, X, ListChecks } from "lucide-react"
 
 const navigation = [
   { name: "Transformers", href: "/", icon: Zap },
@@ -13,7 +13,6 @@ const navigation = [
   { name: "Image Upload", href: "/upload", icon: Upload },
   { name: "Gallery", href: "/gallery", icon: Images },
   { name: "Inspections", href: "/inspections", icon: ListChecks },
-  { name: "DB", href: "/db", icon: TableIcon },
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 
