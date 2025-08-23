@@ -12,39 +12,7 @@ import Link from "next/link"
 import { useState } from "react"
 
 export default function SettingsPage() {
-  const [initMsg, setInitMsg] = useState<string>("")
-  const [seeding, setSeeding] = useState(false)
-  const [seedingMock, setSeedingMock] = useState(false)
-
-  const handleInitDb = async () => {
-    setSeeding(true)
-    setInitMsg("")
-    try {
-      const res = await fetch("/api/seed", { method: "POST" })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || "Seed failed")
-      setInitMsg(`Seeded: ${json.transformers} transformers, ${json.images} images`)
-    } catch (e: any) {
-      setInitMsg(e?.message || "Failed to seed. Ensure schema is created in Supabase SQL editor (see supabase/schema.sql).")
-    } finally {
-      setSeeding(false)
-    }
-  }
-
-  const handleSeedMock = async () => {
-    setSeedingMock(true)
-    setInitMsg("")
-    try {
-      const res = await fetch("/api/seed-mock", { method: "POST" })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || "Seed mock failed")
-      setInitMsg(`Mock seeded: ${json.transformers} transformers`)
-    } catch (e: any) {
-      setInitMsg(e?.message || "Failed to seed mock data. Ensure schema is created in Supabase SQL editor.")
-    } finally {
-      setSeedingMock(false)
-    }
-  }
+  // DB seeding controls removed per request
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -62,26 +30,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Initialize / Seed DB */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-sans">Database</CardTitle>
-              <CardDescription className="font-serif">Initialize tables and insert demo data</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground font-serif">Run schema in Supabase → SQL Editor using <code>supabase/schema.sql</code>, then click Seed to insert sample rows.</p>
-              <div className="flex gap-3">
-                <Link href="/db"><Button variant="secondary">Open DB View</Button></Link>
-                <Button onClick={handleInitDb} disabled={seeding}>
-                  {seeding ? "Seeding..." : "Seed Demo Data"}
-                </Button>
-                <Button onClick={handleSeedMock} variant="outline" disabled={seedingMock}>
-                  {seedingMock ? "Seeding..." : "Seed Mock Data"}
-                </Button>
-              </div>
-              {initMsg && <div className="text-sm text-foreground">{initMsg}</div>}
-            </CardContent>
-          </Card>
+          {/* Database seeding section removed */}
           {/* Temperature Thresholds */}
           <Card>
             <CardHeader>

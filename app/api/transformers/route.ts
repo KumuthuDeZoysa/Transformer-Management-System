@@ -7,12 +7,16 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const limit = Number(searchParams.get('limit') ?? '50')
   const offset = Number(searchParams.get('offset') ?? '0')
+  const q = searchParams.get('q')?.trim()
 
-  const { data, error } = await supabase
-    .from('transformers')
-    .select('*')
-    .range(offset, offset + limit - 1)
+  let query = supabase.from('transformers').select('*')
+  if (q && q.length > 0) {
+    // Search by business code; could be extended to region/location if needed
+    query = query.ilike('code', `%${q}%`)
+  }
+  const { data, error } = await query
     .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data ?? [])
