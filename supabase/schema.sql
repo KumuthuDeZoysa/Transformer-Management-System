@@ -31,15 +31,34 @@ create table if not exists public.images (
   created_at timestamptz not null default now()
 );
 
+-- Inspections table to track inspection records for transformers
+create table if not exists public.inspections (
+  id uuid primary key default gen_random_uuid(),
+  transformer_id uuid not null references public.transformers(id) on delete cascade,
+  inspection_no text,
+  inspected_at timestamptz not null default now(),
+  maintenance_date timestamptz,
+  status text check (status in ('In Progress','Pending','Completed')) default 'Completed',
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_inspections_transformer on public.inspections(transformer_id);
+create index if not exists idx_inspections_inspected_at on public.inspections(inspected_at);
+
 -- Enable Row Level Security
 alter table public.transformers enable row level security;
 alter table public.images enable row level security;
+alter table public.inspections enable row level security;
 
 -- Basic public read policies (adjust as needed)
 drop policy if exists "Public read transformers" on public.transformers;
 create policy "Public read transformers" on public.transformers for select using (true);
 drop policy if exists "Public read images" on public.images;
 create policy "Public read images" on public.images for select using (true);
+drop policy if exists "Public read inspections" on public.inspections;
+create policy "Public read inspections" on public.inspections for select using (true);
 
 -- Insert permissions for anon (optional for seeding/demo). Consider restricting in production.
 drop policy if exists "Anon insert transformers" on public.transformers;
@@ -54,3 +73,9 @@ drop policy if exists "Anon update images" on public.images;
 create policy "Anon update images" on public.images for update using (true) with check (true);
 drop policy if exists "Anon delete images" on public.images;
 create policy "Anon delete images" on public.images for delete using (true);
+drop policy if exists "Anon insert inspections" on public.inspections;
+create policy "Anon insert inspections" on public.inspections for insert with check (true);
+drop policy if exists "Anon update inspections" on public.inspections;
+create policy "Anon update inspections" on public.inspections for update using (true) with check (true);
+drop policy if exists "Anon delete inspections" on public.inspections;
+create policy "Anon delete inspections" on public.inspections for delete using (true);
