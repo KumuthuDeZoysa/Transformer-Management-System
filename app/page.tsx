@@ -12,6 +12,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { TransformerForm } from "@/components/forms/transformer-form"
 import { transformerApi, statsApi, type Transformer } from "@/lib/mock-api"
+import { fetchTransformersFromDb } from "@/lib/db-api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 // Form data interface for the transformer form
@@ -58,6 +59,40 @@ export default function TransformersPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Try DB first
+        try {
+          const dbRows = await fetchTransformersFromDb()
+          if (dbRows.length > 0) {
+            const mapped: Transformer[] = dbRows.map((r) => ({
+              id: r.code || r.id,
+              poleNo: r.pole_no || "",
+              region: r.region || "",
+              type: (r.type as any) || "Distribution",
+              capacity: r.capacity || "",
+              location: r.location || "",
+              status: (r.status as any) || "Normal",
+              lastInspection: r.last_inspection || "Not inspected",
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            }))
+            setTransformersData(mapped)
+            // Simple stats from DB rows
+            const normal = mapped.filter((t) => t.status === "Normal").length
+            const warning = mapped.filter((t) => t.status === "Warning").length
+            const critical = mapped.filter((t) => t.status === "Critical").length
+            setStats({
+              totalTransformers: mapped.length,
+              pendingInspections: warning + critical,
+              criticalAlerts: critical,
+              inspectionsToday: 0,
+            })
+            return
+          }
+        } catch (e) {
+          // fall back to mock below
+        }
+
+        // Fallback to mock
         const [transformers, dashboardStats] = await Promise.all([
           transformerApi.getAll(),
           statsApi.getDashboardStats(),
@@ -89,31 +124,98 @@ export default function TransformersPage() {
   const handleFormSubmit = async (formData: TransformerFormData) => {
     try {
       if (editingTransformer) {
-        // Update existing transformer with form data
-        const updatedTransformer: Transformer = {
-          ...formData,
-          status: editingTransformer.status,
-          lastInspection: editingTransformer.lastInspection,
-          createdAt: editingTransformer.createdAt,
-          updatedAt: new Date().toISOString(),
+        // Persist update to DB
+        const res = await fetch(`/api/transformers/${editingTransformer.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            poleNo: formData.poleNo,
+            region: formData.region,
+            type: formData.type,
+            capacity: formData.capacity,
+            location: formData.location,
+          }),
+        })
+        const updated = await res.json()
+        if (!res.ok) throw new Error(updated?.error || 'Update failed')
+        // Refresh list from DB to ensure we show the latest values
+        try {
+          const dbRows = await fetchTransformersFromDb()
+          const mapped: Transformer[] = dbRows.map((r) => ({
+            id: r.code || r.id,
+            poleNo: r.pole_no || "",
+            region: r.region || "",
+            type: (r.type as any) || "Distribution",
+            capacity: r.capacity || "",
+            location: r.location || "",
+            status: (r.status as any) || "Normal",
+            lastInspection: r.last_inspection || "Not inspected",
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          }))
+          setTransformersData(mapped)
+        } catch {
+          // fallback to local update if DB fetch fails
+          const updatedTransformer: Transformer = {
+            id: updated.code || updated.id,
+            poleNo: updated.pole_no || '',
+            region: updated.region || '',
+            type: (updated.type as any) || 'Distribution',
+            capacity: updated.capacity || '',
+            location: updated.location || '',
+            status: (updated.status as any) || 'Normal',
+            lastInspection: updated.last_inspection || editingTransformer.lastInspection,
+            createdAt: updated.created_at || editingTransformer.createdAt,
+            updatedAt: updated.updated_at || new Date().toISOString(),
+          }
+          setTransformersData((prev) => prev.map((t) => (t.id === editingTransformer.id ? updatedTransformer : t)))
         }
-        await transformerApi.update(editingTransformer.id, updatedTransformer)
-        setTransformersData((prev) =>
-          prev.map((t) =>
-            t.id === editingTransformer.id ? updatedTransformer : t,
-          ),
-        )
       } else {
-        // Create new transformer with default values
-        const newTransformerData: Transformer = {
-          ...formData,
-          status: "Normal" as const,
-          lastInspection: "Not inspected",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+        // Persist create to DB
+        const res = await fetch('/api/transformers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: formData.id,
+            poleNo: formData.poleNo,
+            region: formData.region,
+            type: formData.type,
+            capacity: formData.capacity,
+            location: formData.location,
+          }),
+        })
+        const created = await res.json()
+        if (!res.ok) throw new Error(created?.error || 'Create failed')
+        try {
+          const dbRows = await fetchTransformersFromDb()
+          const mapped: Transformer[] = dbRows.map((r) => ({
+            id: r.code || r.id,
+            poleNo: r.pole_no || "",
+            region: r.region || "",
+            type: (r.type as any) || "Distribution",
+            capacity: r.capacity || "",
+            location: r.location || "",
+            status: (r.status as any) || "Normal",
+            lastInspection: r.last_inspection || "Not inspected",
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          }))
+          setTransformersData(mapped)
+        } catch {
+          const newTransformer: Transformer = {
+            id: created.code || created.id,
+            poleNo: created.pole_no || '',
+            region: created.region || '',
+            type: (created.type as any) || 'Distribution',
+            capacity: created.capacity || '',
+            location: created.location || '',
+            status: (created.status as any) || 'Normal',
+            lastInspection: created.last_inspection || 'Not inspected',
+            createdAt: created.created_at || new Date().toISOString(),
+            updatedAt: created.updated_at || new Date().toISOString(),
+          }
+          setTransformersData((prev) => [...prev, newTransformer])
         }
-        const newTransformer = await transformerApi.create(newTransformerData)
-        setTransformersData((prev) => [...prev, newTransformer])
       }
       setShowForm(false)
       setEditingTransformer(undefined)
@@ -127,16 +229,59 @@ export default function TransformersPage() {
     setEditingTransformer(undefined)
   }
 
-  const handleEdit = (transformer: Transformer) => {
-    setEditingTransformer(transformer)
+  const handleEdit = async (transformer: Transformer) => {
+    try {
+      const res = await fetch(`/api/transformers/${transformer.id}`)
+      if (res.ok) {
+        const t = await res.json()
+        const mapped: Transformer = {
+          id: t.code || t.id,
+          poleNo: t.pole_no || "",
+          region: t.region || "",
+          type: (t.type as any) || "Distribution",
+          capacity: t.capacity || "",
+          location: t.location || "",
+          status: (t.status as any) || "Normal",
+          lastInspection: t.last_inspection || transformer.lastInspection,
+          createdAt: t.created_at || transformer.createdAt,
+          updatedAt: t.updated_at || transformer.updatedAt,
+        }
+        setEditingTransformer(mapped)
+      } else {
+        setEditingTransformer(transformer)
+      }
+    } catch {
+      setEditingTransformer(transformer)
+    }
     setShowForm(true)
   }
 
   const handleDelete = async (transformerId: string) => {
     if (confirm("Are you sure you want to delete this transformer?")) {
       try {
-        await transformerApi.delete(transformerId)
-        setTransformersData((prev) => prev.filter((t) => t.id !== transformerId))
+        const res = await fetch(`/api/transformers/${transformerId}`, { method: 'DELETE' })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          throw new Error(j?.error || 'Delete failed')
+        }
+        try {
+          const dbRows = await fetchTransformersFromDb()
+          const mapped: Transformer[] = dbRows.map((r) => ({
+            id: r.code || r.id,
+            poleNo: r.pole_no || "",
+            region: r.region || "",
+            type: (r.type as any) || "Distribution",
+            capacity: r.capacity || "",
+            location: r.location || "",
+            status: (r.status as any) || "Normal",
+            lastInspection: r.last_inspection || "Not inspected",
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          }))
+          setTransformersData(mapped)
+        } catch {
+          setTransformersData((prev) => prev.filter((t) => t.id !== transformerId))
+        }
       } catch (error) {
         console.error("Failed to delete transformer:", error)
       }

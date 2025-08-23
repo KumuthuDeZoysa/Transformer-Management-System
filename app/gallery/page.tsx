@@ -1,160 +1,119 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Search, Eye, Download, ArrowLeft, Upload, X, Calendar, User, MessageSquare, Camera } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Search, Eye, Download, ArrowLeft, Upload, X, Calendar, User, MessageSquare, Camera, RefreshCw } from "lucide-react"
 import Link from "next/link"
 
-const initialImages = [
-  {
-    id: 1,
-    transformerId: "AZ-8890",
-    type: "Baseline",
-    weather: "Sunny",
-    date: "May 21, 2023",
-    uploader: "John Smith",
-    comments: "Initial baseline capture under optimal conditions",
-    status: "Normal",
-    thumbnail: "/thermal-image-normal.png",
-    fullImage: "/normal-thermal-image.png",
-  },
-  {
-    id: 2,
-    transformerId: "AZ-1649",
-    type: "Maintenance",
-    weather: "Cloudy",
-    date: "May 22, 2023",
-    uploader: "Sarah Johnson",
-    comments: "Routine maintenance check - slight temperature elevation detected",
-    status: "Warning",
-    thumbnail: "/thermal-image-warning.png",
-    fullImage: "/thermal-warning.png",
-  },
-  {
-    id: 3,
-    transformerId: "AZ-7316",
-    type: "Maintenance",
-    weather: "Rainy",
-    date: "May 23, 2023",
-    uploader: "Mike Chen",
-    comments: "Critical hotspot identified in upper section - immediate attention required",
-    status: "Critical",
-    thumbnail: "/thermal-critical-hotspot.png",
-    fullImage: "/thermal-critical-hotspot.png",
-  },
-  {
-    id: 4,
-    transformerId: "AZ-4613",
-    type: "Baseline",
-    weather: "Sunny",
-    date: "May 20, 2023",
-    uploader: "Lisa Wong",
-    comments: "Clean baseline reading, all parameters within normal range",
-    status: "Normal",
-    thumbnail: "/thermal-image-baseline-normal.png",
-    fullImage: "/thermal-baseline-normal.png",
-  },
-  {
-    id: 5,
-    transformerId: "AX-8993",
-    type: "Maintenance",
-    weather: "Cloudy",
-    date: "May 19, 2023",
-    uploader: "David Kumar",
-    comments: "Post-maintenance verification - temperatures normalized",
-    status: "Normal",
-    thumbnail: "/thermal-maintenance-normal.png",
-    fullImage: "/thermal-maintenance-normal.png",
-  },
-  {
-    id: 6,
-    transformerId: "AY-8790",
-    type: "Baseline",
-    weather: "Sunny",
-    date: "May 18, 2023",
-    uploader: "Emma Rodriguez",
-    comments: "Baseline with minor temperature variations - monitoring recommended",
-    status: "Warning",
-    thumbnail: "/thermal-baseline-warning.png",
-    fullImage: "/thermal-baseline-warning.png",
-  },
-]
+// Types from our minimal DB/API
+type DbImage = {
+  id: string
+  transformer_id: string
+  url: string
+  label: string | null
+  captured_at: string | null
+}
 
-const transformerOptions = [
-  { id: "AZ-8890", name: "AZ-8890 - Maharagama Distribution" },
-  { id: "AZ-1649", name: "AZ-1649 - Nugegoda Bulk" },
-  { id: "AZ-7316", name: "AZ-7316 - Colombo Distribution" },
-  { id: "AZ-4613", name: "AZ-4613 - Kandy Bulk" },
-  { id: "AX-8993", name: "AX-8993 - Galle Distribution" },
-  { id: "AY-8790", name: "AY-8790 - Matara Bulk" },
-]
+type DbTransformer = {
+  id: string
+  code: string | null
+  region: string | null
+  location: string | null
+  status?: 'Normal' | 'Warning' | 'Critical' | null
+}
+
+// UI model used by the gallery
+type GalleryImage = {
+  id: string
+  transformerId: string // display code or uuid
+  type: "Baseline" | "Maintenance" | "Image"
+  weather: string
+  date: string
+  uploader: string
+  comments?: string
+  status: "Normal" | "Warning" | "Critical"
+  thumbnail: string
+  fullImage: string
+}
 
 export default function GalleryPage() {
-  const [images, setImages] = useState(initialImages)
+  const [images, setImages] = useState<GalleryImage[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [typeFilter, setTypeFilter] = useState("all")
   const [weatherFilter, setWeatherFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [selectedImage, setSelectedImage] = useState<(typeof initialImages)[0] | null>(null)
-  const [isUploadOpen, setIsUploadOpen] = useState(false)
-  const [uploadForm, setUploadForm] = useState({
-    transformerId: "",
-    type: "",
-    weather: "",
-    uploader: "",
-    comments: "",
-    file: null as File | null,
-  })
+  const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null)
 
-  const filteredImages = images.filter((image) => {
-    const matchesSearch =
-      image.transformerId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      image.uploader.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesType = typeFilter === "all" || image.type.toLowerCase() === typeFilter
-    const matchesWeather = weatherFilter === "all" || image.weather.toLowerCase() === weatherFilter
-    const matchesStatus = statusFilter === "all" || image.status.toLowerCase() === statusFilter
+  // Load from real DB via our API routes
+  const loadData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [tRes, iRes] = await Promise.all([
+        fetch("/api/transformers?limit=500", { cache: "no-store" }),
+        fetch("/api/images", { cache: "no-store" }),
+      ])
+      if (!tRes.ok) throw new Error("Failed to load transformers")
+      if (!iRes.ok) throw new Error("Failed to load images")
+      const transformers: DbTransformer[] = await tRes.json()
+  const imagesPayload = await iRes.json()
+  const imagesRows: DbImage[] = Array.isArray(imagesPayload) ? imagesPayload : (imagesPayload.items || [])
 
-    return matchesSearch && matchesType && matchesWeather && matchesStatus
-  })
+      const tMap = new Map<string, DbTransformer>()
+      transformers.forEach((t) => tMap.set(t.id, t))
 
-  const handleUpload = () => {
-    if (!uploadForm.transformerId || !uploadForm.type || !uploadForm.uploader || !uploadForm.file) {
-      alert("Please fill in all required fields")
-      return
+    const mapped: GalleryImage[] = imagesRows.map((img) => {
+        const t = tMap.get(img.transformer_id || "")
+        const code = t?.code || t?.id || img.transformer_id
+        const when = img.captured_at ? new Date(img.captured_at) : new Date()
+        const label = img.label || ""
+        const type: GalleryImage["type"] = /base/i.test(label) ? "Baseline" : /maint/i.test(label) ? "Maintenance" : "Image"
+        return {
+          id: img.id,
+          transformerId: String(code),
+          type,
+          weather: "-",
+          date: when.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+      uploader: "System",
+          comments: label || undefined,
+      status: (t?.status as any) || "Normal",
+          thumbnail: img.url,
+          fullImage: img.url,
+        }
+      })
+
+      setImages(mapped)
+    } catch (e: any) {
+      setError(e.message || "Failed to load gallery")
+    } finally {
+      setLoading(false)
     }
-
-    const newImage = {
-      id: images.length + 1,
-      transformerId: uploadForm.transformerId,
-      type: uploadForm.type,
-      weather: uploadForm.weather || "Sunny",
-      date: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
-      uploader: uploadForm.uploader,
-      comments: uploadForm.comments,
-      status: "Normal",
-      thumbnail: URL.createObjectURL(uploadForm.file),
-      fullImage: URL.createObjectURL(uploadForm.file),
-    }
-
-    setImages([newImage, ...images])
-    setUploadForm({
-      transformerId: "",
-      type: "",
-      weather: "",
-      uploader: "",
-      comments: "",
-      file: null,
-    })
-    setIsUploadOpen(false)
   }
+
+  useEffect(() => {
+    loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const filteredImages = useMemo(() => {
+    const term = searchTerm.toLowerCase()
+    return images.filter((image) => {
+      const matchesSearch =
+        image.transformerId.toLowerCase().includes(term) || (image.comments || "").toLowerCase().includes(term)
+      const matchesType = typeFilter === "all" || image.type.toLowerCase() === typeFilter
+      const matchesWeather = weatherFilter === "all" || image.weather.toLowerCase() === weatherFilter
+      const matchesStatus = statusFilter === "all" || image.status.toLowerCase() === statusFilter
+      return matchesSearch && matchesType && matchesWeather && matchesStatus
+    })
+  }, [images, searchTerm, typeFilter, weatherFilter, statusFilter])
 
   return (
     <MainLayout>
@@ -172,128 +131,17 @@ export default function GalleryPage() {
               <p className="text-muted-foreground font-serif">Browse thermal images and inspection results</p>
             </div>
           </div>
-          <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
-            <DialogTrigger asChild>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={loadData} className="font-serif bg-transparent">
+              <RefreshCw className="mr-2 h-4 w-4" /> Refresh
+            </Button>
+            <Link href="/upload">
               <Button className="bg-primary hover:bg-primary/90 font-serif">
                 <Upload className="mr-2 h-4 w-4" />
                 Upload Image
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle className="font-sans">Upload New Image</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="transformer" className="font-serif">
-                    Transformer *
-                  </Label>
-                  <Select
-                    value={uploadForm.transformerId}
-                    onValueChange={(value) => setUploadForm((prev) => ({ ...prev, transformerId: value }))}
-                  >
-                    <SelectTrigger className="font-serif">
-                      <SelectValue placeholder="Select transformer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {transformerOptions.map((transformer) => (
-                        <SelectItem key={transformer.id} value={transformer.id}>
-                          {transformer.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="type" className="font-serif">
-                    Image Type *
-                  </Label>
-                  <Select
-                    value={uploadForm.type}
-                    onValueChange={(value) => setUploadForm((prev) => ({ ...prev, type: value }))}
-                  >
-                    <SelectTrigger className="font-serif">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Baseline">Baseline</SelectItem>
-                      <SelectItem value="Maintenance">Maintenance</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {uploadForm.type === "Baseline" && (
-                  <div>
-                    <Label htmlFor="weather" className="font-serif">
-                      Environmental Condition
-                    </Label>
-                    <Select
-                      value={uploadForm.weather}
-                      onValueChange={(value) => setUploadForm((prev) => ({ ...prev, weather: value }))}
-                    >
-                      <SelectTrigger className="font-serif">
-                        <SelectValue placeholder="Select condition" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Sunny">Sunny</SelectItem>
-                        <SelectItem value="Cloudy">Cloudy</SelectItem>
-                        <SelectItem value="Rainy">Rainy</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                <div>
-                  <Label htmlFor="uploader" className="font-serif">
-                    Uploader Name *
-                  </Label>
-                  <Input
-                    id="uploader"
-                    value={uploadForm.uploader}
-                    onChange={(e) => setUploadForm((prev) => ({ ...prev, uploader: e.target.value }))}
-                    placeholder="Enter your name"
-                    className="font-serif"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="file" className="font-serif">
-                    Image File *
-                  </Label>
-                  <Input
-                    id="file"
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setUploadForm((prev) => ({ ...prev, file: e.target.files?.[0] || null }))}
-                    className="font-serif"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="comments" className="font-serif">
-                    Comments
-                  </Label>
-                  <Textarea
-                    id="comments"
-                    value={uploadForm.comments}
-                    onChange={(e) => setUploadForm((prev) => ({ ...prev, comments: e.target.value }))}
-                    placeholder="Optional comments about the image"
-                    className="font-serif"
-                  />
-                </div>
-
-                <div className="flex space-x-2">
-                  <Button onClick={handleUpload} className="flex-1 font-serif">
-                    Upload Image
-                  </Button>
-                  <Button variant="outline" onClick={() => setIsUploadOpen(false)} className="flex-1 font-serif">
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+            </Link>
+          </div>
         </div>
 
         {/* Filters */}
@@ -355,79 +203,87 @@ export default function GalleryPage() {
         </Card>
 
         {/* Image Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredImages.map((image) => (
-            <Card key={image.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-              <div className="aspect-video relative cursor-pointer" onClick={() => setSelectedImage(image)}>
-                <img
-                  src={image.thumbnail || "/placeholder.svg"}
-                  alt={`Thermal image for ${image.transformerId}`}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-2 right-2">
-                  <Badge
-                    variant={
-                      image.status === "Normal" ? "default" : image.status === "Warning" ? "secondary" : "destructive"
-                    }
-                    className="font-serif"
-                  >
-                    {image.status}
-                  </Badge>
-                </div>
-                <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">
-                  <Eye className="h-8 w-8 text-white opacity-0 hover:opacity-100 transition-opacity" />
-                </div>
-              </div>
-              <CardContent className="p-4">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-sans font-semibold text-lg">{image.transformerId}</h3>
-                    <Badge variant="outline" className="font-serif text-xs">
-                      {image.type}
+        {loading ? (
+          <div className="text-center py-12 text-muted-foreground font-serif">Loading images…</div>
+        ) : error ? (
+          <div className="text-center py-12 text-red-600 font-serif">{error}</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredImages.map((image) => (
+              <Card key={image.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                <div className="aspect-video relative cursor-pointer" onClick={() => setSelectedImage(image)}>
+                  <img
+                    src={image.thumbnail || "/placeholder.svg"}
+                    alt={`Thermal image for ${image.transformerId}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-2 right-2">
+                    <Badge
+                      variant={
+                        image.status === "Normal" ? "default" : image.status === "Warning" ? "secondary" : "destructive"
+                      }
+                      className="font-serif"
+                    >
+                      {image.status}
                     </Badge>
                   </div>
-
-                  <div className="space-y-2 text-sm text-muted-foreground font-serif">
-                    <div className="flex items-center gap-2">
-                      <Camera className="h-3 w-3" />
-                      <span>Weather: {image.weather}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-3 w-3" />
-                      <span>{image.date}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <User className="h-3 w-3" />
-                      <span>{image.uploader}</span>
-                    </div>
-                    {image.comments && (
-                      <div className="flex items-start gap-2">
-                        <MessageSquare className="h-3 w-3 mt-0.5" />
-                        <span className="text-xs line-clamp-2">{image.comments}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex space-x-2 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 font-serif bg-transparent"
-                      onClick={() => setSelectedImage(image)}
-                    >
-                      <Eye className="mr-1 h-3 w-3" />
-                      View
-                    </Button>
-                    <Button variant="outline" size="sm" className="flex-1 font-serif bg-transparent">
-                      <Download className="mr-1 h-3 w-3" />
-                      Download
-                    </Button>
+                  <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center">
+                    <Eye className="h-8 w-8 text-white opacity-0 hover:opacity-100 transition-opacity" />
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                <CardContent className="p-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-sans font-semibold text-lg">{image.transformerId}</h3>
+                      <Badge variant="outline" className="font-serif text-xs">
+                        {image.type}
+                      </Badge>
+                    </div>
+
+                    <div className="space-y-2 text-sm text-muted-foreground font-serif">
+                      <div className="flex items-center gap-2">
+                        <Camera className="h-3 w-3" />
+                        <span>Weather: {image.weather}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-3 w-3" />
+                        <span>{image.date}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <User className="h-3 w-3" />
+                        <span>{image.uploader}</span>
+                      </div>
+                      {image.comments && (
+                        <div className="flex items-start gap-2">
+                          <MessageSquare className="h-3 w-3 mt-0.5" />
+                          <span className="text-xs line-clamp-2">{image.comments}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex space-x-2 pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 font-serif bg-transparent"
+                        onClick={() => setSelectedImage(image)}
+                      >
+                        <Eye className="mr-1 h-3 w-3" />
+                        View
+                      </Button>
+                      <a href={image.fullImage} download target="_blank" rel="noreferrer" className="flex-1">
+                        <Button variant="outline" size="sm" className="w-full font-serif bg-transparent">
+                          <Download className="mr-1 h-3 w-3" />
+                          Download
+                        </Button>
+                      </a>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
         <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto" showCloseButton={false}>
@@ -492,10 +348,12 @@ export default function GalleryPage() {
                   )}
 
                   <div className="flex space-x-2">
-                    <Button className="font-serif">
-                      <Download className="mr-2 h-4 w-4" />
-                      Download Full Resolution
-                    </Button>
+                    <a href={selectedImage.fullImage} download target="_blank" rel="noreferrer">
+                      <Button className="font-serif">
+                        <Download className="mr-2 h-4 w-4" />
+                        Download Full Resolution
+                      </Button>
+                    </a>
                     <Button variant="outline" className="font-serif bg-transparent">
                       Generate Report
                     </Button>
@@ -506,17 +364,19 @@ export default function GalleryPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Load More */}
-        {filteredImages.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground font-serif">No images found matching your criteria.</p>
-          </div>
-        ) : (
-          <div className="text-center">
-            <Button variant="outline" className="font-serif bg-transparent">
-              Load More Images ({filteredImages.length} of {images.length} shown)
-            </Button>
-          </div>
+        {/* Load More / Empty State */}
+        {!loading && !error && (
+          filteredImages.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground font-serif">No images found matching your criteria.</p>
+            </div>
+          ) : (
+            <div className="text-center">
+              <Button variant="outline" className="font-serif bg-transparent">
+                Load More Images ({filteredImages.length} of {images.length} shown)
+              </Button>
+            </div>
+          )
         )}
       </div>
     </MainLayout>

@@ -54,7 +54,7 @@ const regions = [
   "Kalutara",
 ]
 
-const transformerTypes = ["Distribution", "Power"]
+const transformerTypes = ["Distribution", "Power", "Bulk"]
 
 export function TransformerForm({ transformer, onSubmit, onCancel, existingTransformers }: TransformerFormProps) {
   const [formData, setFormData] = useState<TransformerFormData>({

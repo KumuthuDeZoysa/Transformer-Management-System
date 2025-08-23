@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -13,13 +13,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { Upload, ImageIcon, ArrowLeft, CheckCircle, Clock } from "lucide-react"
 import Link from "next/link"
 
-const mockTransformers = [
-  { id: "AZ-8890", name: "AZ-8890 - Maharagama" },
-  { id: "AZ-1649", name: "AZ-1649 - Nugegoda" },
-  { id: "AZ-7316", name: "AZ-7316 - Colombo" },
-  { id: "AZ-4613", name: "AZ-4613 - Kandy" },
-  { id: "AX-8993", name: "AX-8993 - Galle" },
-]
+type DbTransformer = {
+  id: string // uuid
+  code: string | null
+  region: string | null
+  location: string | null
+}
 
 interface ImageUpload {
   id: string
@@ -33,7 +32,9 @@ interface ImageUpload {
 }
 
 export default function ImageUploadPage() {
+  // Stores the transformer UUID from DB
   const [selectedTransformer, setSelectedTransformer] = useState("")
+  const [transformerOptions, setTransformerOptions] = useState<Array<{ uuid: string; code: string; label: string }>>([])
   const [imageType, setImageType] = useState<"baseline" | "maintenance" | "">("")
   const [uploaderName, setUploaderName] = useState("")
   const [comments, setComments] = useState("")
@@ -45,6 +46,30 @@ export default function ImageUploadPage() {
 
   // Mock API storage
   const [imageUploads, setImageUploads] = useState<ImageUpload[]>([])
+
+  // Load transformers from DB for dropdown
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/transformers?limit=500')
+        if (!res.ok) throw new Error('Failed to fetch transformers')
+        const rows: any[] = await res.json()
+        const opts = rows.map((r: DbTransformer) => ({
+          uuid: r.id,
+          code: r.code || r.id,
+          label: `${r.code || r.id} - ${r.region || r.location || ''}`.trim(),
+        }))
+        if (!cancelled) setTransformerOptions(opts)
+      } catch (e) {
+        console.error('Failed to load transformers:', e)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -80,25 +105,42 @@ export default function ImageUploadPage() {
       })
     }, 200)
 
-    // Simulate upload completion after 2 seconds
-    setTimeout(() => {
-      const newUpload: ImageUpload = {
-        id: Date.now().toString(),
-        transformerId: selectedTransformer,
-        fileName: selectedFile.name,
-        imageType: imageType as "baseline" | "maintenance",
-        uploaderName,
-        uploadDateTime: new Date().toISOString(),
-        comments: comments || undefined,
-        environmentalCondition:
-          imageType === "baseline" ? (environmentalCondition as "sunny" | "cloudy" | "rainy") : undefined,
+    // Upload to server -> Cloudinary
+    setTimeout(async () => {
+      try {
+        const form = new FormData()
+        form.append('file', selectedFile!)
+        form.append('transformer_id', selectedTransformer)
+        form.append('label', selectedFile!.name)
+
+        const resp = await fetch('/api/upload-image', {
+          method: 'POST',
+          body: form,
+        })
+        const data = await resp.json().catch(() => null)
+        if (!resp.ok) throw new Error((data && data.error) || 'Upload failed')
+
+        const newUpload: ImageUpload = {
+          id: Date.now().toString(),
+          transformerId: selectedTransformer,
+          fileName: selectedFile!.name,
+          imageType: imageType as 'baseline' | 'maintenance',
+          uploaderName,
+          uploadDateTime: new Date().toISOString(),
+          comments: comments || undefined,
+          environmentalCondition: imageType === 'baseline' ? (environmentalCondition as 'sunny' | 'cloudy' | 'rainy') : undefined,
+        }
+        setImageUploads((prev) => [...prev, newUpload])
+
+        setUploadComplete(true)
+        setIsUploading(false)
+      } catch (err) {
+        console.error('Upload failed:', err)
+        setIsUploading(false)
+        return
       }
 
-      setImageUploads((prev) => [...prev, newUpload])
-      setUploadComplete(true)
-      setIsUploading(false)
-
-      console.log("Image uploaded:", newUpload)
+  // Upload completed
 
       // Reset form after successful upload
       setTimeout(() => {
@@ -110,7 +152,7 @@ export default function ImageUploadPage() {
         setSelectedFile(null)
         setUploadProgress(0)
         setUploadComplete(false)
-      }, 2000)
+  }, 2000)
     }, 2000)
   }
 
@@ -150,9 +192,9 @@ export default function ImageUploadPage() {
                       <SelectValue placeholder="Select transformer" />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockTransformers.map((transformer) => (
-                        <SelectItem key={transformer.id} value={transformer.id}>
-                          {transformer.name}
+                      {transformerOptions.map((t) => (
+                        <SelectItem key={t.uuid} value={t.uuid}>
+                          {t.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
