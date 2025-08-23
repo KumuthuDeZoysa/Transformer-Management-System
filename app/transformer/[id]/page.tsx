@@ -169,13 +169,60 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
   })
 
   useEffect(() => {
-    // Find transformer by ID
-    const foundTransformer = transformersData.find((t) => t.id === resolvedParams.id)
-    setTransformer(foundTransformer || null)
+    let cancelled = false
+    const load = async () => {
+      try {
+        // 1) Load transformer by code or uuid from API
+        const res = await fetch(`/api/transformers/${resolvedParams.id}`)
+        if (res.ok) {
+          const t = await res.json()
+          if (cancelled) return
+          const mapped: Transformer = {
+            id: t.code || t.id,
+            poleNo: t.pole_no || '',
+            region: t.region || '',
+            type: (t.type as string) || 'Distribution',
+            capacity: t.capacity || '',
+            location: t.location || '',
+            status: (t.status as string) || 'Normal',
+            lastInspection: t.last_inspection || undefined,
+          }
+          setTransformer(mapped)
 
-    // Filter images for this transformer
-    const transformerImages = mockImages.filter((img) => img.transformerId === resolvedParams.id)
-    setImages(transformerImages)
+          // 2) Load images by transformer uuid (t.id)
+          const ir = await fetch(`/api/images?transformer_id=${encodeURIComponent(t.id)}`)
+          if (ir.ok) {
+            const body = await ir.json()
+            const items = Array.isArray(body) ? body : (body.items || [])
+            const mappedImages: UploadedImage[] = items.map((img: any) => ({
+              id: img.id,
+              transformerId: mapped.id,
+              filename: img.label || img.url?.split('/')?.pop() || 'image',
+              imageType: (img.image_type as 'Baseline' | 'Maintenance') || 'Maintenance',
+              uploader: img.uploader || 'Unknown',
+              uploadDate: img.created_at || img.captured_at || new Date().toISOString(),
+              comments: img.comments || undefined,
+              environmentalCondition: img.environmental_condition || undefined,
+              imageUrl: img.url || '/placeholder.svg',
+              status: (img.status as 'Normal' | 'Warning' | 'Critical') || 'Normal',
+            }))
+            if (!cancelled) setImages(mappedImages)
+            return
+          }
+        }
+      } catch {}
+
+      // Fallback to mock if DB failed
+      if (cancelled) return
+      const foundTransformer = transformersData.find((t) => t.id === resolvedParams.id)
+      setTransformer(foundTransformer || null)
+      const transformerImages = mockImages.filter((img) => img.transformerId === resolvedParams.id)
+      setImages(transformerImages)
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
   }, [resolvedParams.id])
 
   const filteredImages = images.filter((image) => {
@@ -199,30 +246,60 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
     }
   }
 
-  const handleUploadSubmit = (e: React.FormEvent) => {
+  const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    try {
+      // Resolve transformer uuid by fetching again (ensures we have the DB id)
+      const tres = await fetch(`/api/transformers/${resolvedParams.id}`)
+      if (!tres.ok) throw new Error('Transformer not found')
+      const t = await tres.json()
 
-    const newImage: UploadedImage = {
-      id: `img-${Date.now()}`,
-      transformerId: resolvedParams.id,
-      filename: `thermal-${uploadForm.imageType.toLowerCase()}-${Date.now()}.jpg`,
-      imageType: uploadForm.imageType,
-      uploader: uploadForm.uploader,
-      uploadDate: new Date().toISOString(),
-      comments: uploadForm.comments,
-      environmentalCondition: uploadForm.imageType === "Baseline" ? uploadForm.environmentalCondition : undefined,
-      imageUrl: "/thermal-image-normal.png",
-      status: "Normal",
+      // Minimal metadata insert; using a placeholder URL unless you wire Storage
+      const body = {
+        transformer_id: t.id, // uuid
+        url: '/thermal-image-normal.png',
+        label: `thermal-${uploadForm.imageType.toLowerCase()}-${Date.now()}.jpg`,
+        captured_at: new Date().toISOString(),
+        // Optional extra fields if you later add columns:
+        image_type: uploadForm.imageType,
+        uploader: uploadForm.uploader,
+        comments: uploadForm.comments || null,
+        environmental_condition: uploadForm.imageType === 'Baseline' ? uploadForm.environmentalCondition : null,
+        status: 'Normal',
+      }
+      const res = await fetch('/api/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const created = await res.json().catch(() => null)
+      if (!res.ok) throw new Error((created && created.error) || 'Image upload failed')
+
+      // Refresh images
+      const ir = await fetch(`/api/images?transformer_id=${encodeURIComponent(t.id)}`)
+      if (ir.ok) {
+        const body = await ir.json()
+        const items = Array.isArray(body) ? body : (body.items || [])
+        const mappedImages: UploadedImage[] = items.map((img: any) => ({
+          id: img.id,
+          transformerId: (transformer?.id || resolvedParams.id),
+          filename: img.label || img.url?.split('/')?.pop() || 'image',
+          imageType: (img.image_type as 'Baseline' | 'Maintenance') || 'Maintenance',
+          uploader: img.uploader || 'Unknown',
+          uploadDate: img.created_at || img.captured_at || new Date().toISOString(),
+          comments: img.comments || undefined,
+          environmentalCondition: img.environmental_condition || undefined,
+          imageUrl: img.url || '/placeholder.svg',
+          status: (img.status as 'Normal' | 'Warning' | 'Critical') || 'Normal',
+        }))
+        setImages(mappedImages)
+      }
+
+      setShowUploadForm(false)
+      setUploadForm({ imageType: 'Maintenance', uploader: '', comments: '', environmentalCondition: 'Sunny' })
+    } catch (err) {
+      console.error('Failed to upload image:', err)
     }
-
-    setImages((prev) => [newImage, ...prev])
-    setShowUploadForm(false)
-    setUploadForm({
-      imageType: "Maintenance",
-      uploader: "",
-      comments: "",
-      environmentalCondition: "Sunny",
-    })
   }
 
   if (!transformer) {
