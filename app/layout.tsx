@@ -17,7 +17,7 @@ const manrope = Manrope({
 })
 
 export const metadata: Metadata = {
-  title: "Oversight - Transformer Management",
+  title: "PowerPulse - Transformer Management",
   description: "Professional transformer thermal inspection system",
   keywords: ["transformer", "management", "thermal", "inspection", "power", "distribution"],
   generator: "Custom Transformer Management System",
