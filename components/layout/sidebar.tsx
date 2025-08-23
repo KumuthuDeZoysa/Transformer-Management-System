@@ -47,7 +47,7 @@ export function Sidebar() {
               <div className="w-8 h-8 bg-sidebar-accent rounded-lg flex items-center justify-center">
                 <Zap className="h-5 w-5 text-sidebar-accent-foreground" />
               </div>
-              <span className="text-xl font-sans font-bold text-sidebar-foreground">Oversight</span>
+              <span className="text-xl font-sans font-bold text-sidebar-foreground">PowerPulse</span>
             </div>
           </div>
 

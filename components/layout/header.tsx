@@ -39,13 +39,13 @@ export function Header() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center space-x-2">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src="/placeholder.svg?height=32&width=32" />
-                  <AvatarFallback>OQ</AvatarFallback>
+                <Avatar className="h-8 w-8 border-1 border-black shadow-sm">
+                  <AvatarImage src="/placeholder-user.jpg" />
+                  <AvatarFallback className="bg-primary text-primary-foreground font-semibold">IP</AvatarFallback>
                 </Avatar>
                 <div className="text-left">
-                  <div className="text-sm font-serif font-medium">Olivera Queen</div>
-                  <div className="text-xs text-muted-foreground">olivera@gmail.com</div>
+                  <div className="text-sm font-serif font-medium">Isuru Perera</div>
+                  <div className="text-xs text-muted-foreground">isuru@gmail.com</div>
                 </div>
               </Button>
             </DropdownMenuTrigger>
