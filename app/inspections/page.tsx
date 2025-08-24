@@ -38,11 +38,9 @@ export default function InspectionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({
     transformer_id: '',
-    inspection_no: '',
-    inspected_at: '',
-    maintenance_date: '',
-    status: 'Completed' as DbInspection['status'],
-    notes: '',
+    inspected_date: '',
+    inspected_time: '',
+    branch: '',
   })
 
   useEffect(() => {
@@ -131,30 +129,34 @@ export default function InspectionsPage() {
 
   const resetForm = () => setForm({
     transformer_id: '',
-    inspection_no: '',
-    inspected_at: '',
-    maintenance_date: '',
-    status: 'Completed',
-    notes: '',
+    inspected_date: '',
+    inspected_time: '',
+    branch: '',
   })
 
   const submit = async () => {
     if (!form.transformer_id) return alert('Please select a transformer')
+    if (!form.inspected_date) return alert('Please select inspection date')
+    if (!form.inspected_time) return alert('Please select inspection time')
+    
     setSaving(true)
     try {
+      // Combine date and time for inspected_at
+      const inspectedAt = new Date(`${form.inspected_date}T${form.inspected_time}`).toISOString()
+      
       const payload = {
         transformer_id: form.transformer_id,
-        inspection_no: form.inspection_no || null,
-        inspected_at: form.inspected_at ? new Date(form.inspected_at).toISOString() : undefined,
-        maintenance_date: form.maintenance_date ? new Date(form.maintenance_date).toISOString() : null,
-        status: form.status,
-        notes: form.notes || null,
+        inspected_at: inspectedAt,
+        status: 'Pending' as DbInspection['status'], // Default status for new inspections
+        notes: form.branch ? `Branch: ${form.branch}` : null, // Store branch info in notes
       }
+      
       if (editingId) {
         await updateInspection(editingId, payload as any)
       } else {
         await createInspection(payload as any)
       }
+      
       // refresh list
       const latest = await fetchInspections()
       const mapped: Row[] = latest.map((i) => ({
@@ -180,13 +182,17 @@ export default function InspectionsPage() {
     const row = rows.find((r) => r.id === id)
     if (!row) return
     const transformer = transformers.find((t) => (t.code || t.id) === row.transformerId || t.id === row.transformerId)
+    
+    // Parse the date and time from inspectedDate
+    const inspectedDate = new Date(row.inspectedDate)
+    const dateStr = inspectedDate.toISOString().split('T')[0] // YYYY-MM-DD
+    const timeStr = inspectedDate.toTimeString().split(' ')[0].slice(0, 5) // HH:MM
+    
     setForm({
       transformer_id: transformer?.id || '',
-      inspection_no: row.inspectionNo === '—' ? '' : row.inspectionNo,
-      inspected_at: '', // leave empty to avoid timezone surprises; user can set explicitly
-      maintenance_date: row.maintenanceDate === '—' ? '' : '',
-      status: row.status,
-      notes: '',
+      inspected_date: dateStr,
+      inspected_time: timeStr,
+      branch: transformer?.region || '', // Use transformer region as branch
     })
     setEditingId(id)
     setAddOpen(true)
@@ -267,8 +273,15 @@ export default function InspectionsPage() {
             </DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
               <div className="md:col-span-2">
-                <label className="text-sm text-muted-foreground font-serif">Transformer</label>
-                <Select value={form.transformer_id} onValueChange={(v) => setForm((f) => ({ ...f, transformer_id: v }))}>
+                <label className="text-sm text-muted-foreground font-serif">Transformer No.</label>
+                <Select value={form.transformer_id} onValueChange={(v) => {
+                  const transformer = transformers.find(t => t.id === v)
+                  setForm((f) => ({ 
+                    ...f, 
+                    transformer_id: v,
+                    branch: transformer?.region || '' // Auto-fill branch from transformer region
+                  }))
+                }}>
                   <SelectTrigger className="font-serif mt-1">
                     <SelectValue placeholder="Select transformer" />
                   </SelectTrigger>
@@ -281,41 +294,33 @@ export default function InspectionsPage() {
               </div>
 
               <div>
-                <label className="text-sm text-muted-foreground font-serif">Inspection No</label>
-                <Input className="font-serif mt-1" placeholder="e.g., 000123589" value={form.inspection_no}
-                  onChange={(e) => setForm((f) => ({ ...f, inspection_no: e.target.value }))} />
+                <label className="text-sm text-muted-foreground font-serif">Branch</label>
+                <Input 
+                  className="font-serif mt-1" 
+                  placeholder="Branch/Region" 
+                  value={form.branch}
+                  onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))} 
+                />
               </div>
 
               <div>
-                <label className="text-sm text-muted-foreground font-serif">Status</label>
-                <Select value={form.status.toLowerCase()} onValueChange={(v) => setForm((f) => ({ ...f, status: (v === 'in progress' ? 'In Progress' : v === 'pending' ? 'Pending' : 'Completed') }))}>
-                  <SelectTrigger className="font-serif mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="in progress">In Progress</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground font-serif">Inspected At</label>
-                <Input type="datetime-local" className="font-serif mt-1" value={form.inspected_at}
-                  onChange={(e) => setForm((f) => ({ ...f, inspected_at: e.target.value }))} />
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground font-serif">Maintenance Date</label>
-                <Input type="datetime-local" className="font-serif mt-1" value={form.maintenance_date}
-                  onChange={(e) => setForm((f) => ({ ...f, maintenance_date: e.target.value }))} />
+                <label className="text-sm text-muted-foreground font-serif">Date of Inspection</label>
+                <Input 
+                  type="date" 
+                  className="font-serif mt-1" 
+                  value={form.inspected_date}
+                  onChange={(e) => setForm((f) => ({ ...f, inspected_date: e.target.value }))} 
+                />
               </div>
 
               <div className="md:col-span-2">
-                <label className="text-sm text-muted-foreground font-serif">Notes</label>
-                <Textarea className="font-serif mt-1" rows={3} value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+                <label className="text-sm text-muted-foreground font-serif">Time</label>
+                <Input 
+                  type="time" 
+                  className="font-serif mt-1" 
+                  value={form.inspected_time}
+                  onChange={(e) => setForm((f) => ({ ...f, inspected_time: e.target.value }))} 
+                />
               </div>
 
               <div className="md:col-span-2 flex justify-end gap-2 pt-2">

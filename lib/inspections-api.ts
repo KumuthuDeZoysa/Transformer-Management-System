@@ -24,14 +24,44 @@ export async function fetchInspections(transformerId?: string): Promise<DbInspec
   return (data ?? []) as DbInspection[]
 }
 
+// Helper function to generate unique inspection number
+async function generateInspectionNumber(): Promise<string> {
+  const supabase = createBrowserClient()
+  
+  // Get the latest inspection number to generate the next one
+  const { data: latestInspection, error } = await supabase
+    .from('inspections')
+    .select('inspection_no')
+    .not('inspection_no', 'is', null)
+    .order('inspection_no', { ascending: false })
+    .limit(1)
+    .single()
+  
+  let nextNumber = 13232341 // Default starting number as per format
+  
+  if (!error && latestInspection?.inspection_no) {
+    const currentNumber = parseInt(latestInspection.inspection_no, 10)
+    if (!isNaN(currentNumber)) {
+      nextNumber = currentNumber + 1
+    }
+  }
+  
+  // Format as 10-digit string with leading zeros
+  return nextNumber.toString().padStart(10, '0')
+}
+
 export async function createInspection(payload: Partial<DbInspection> & { transformer_id: string }) {
   const supabase = createBrowserClient()
+  
+  // Auto-generate inspection number if not provided
+  const inspectionNo = payload.inspection_no || await generateInspectionNumber()
+  
   const { data, error } = await supabase.from('inspections').insert({
     transformer_id: payload.transformer_id,
-    inspection_no: payload.inspection_no ?? null,
+    inspection_no: inspectionNo,
     inspected_at: payload.inspected_at ?? new Date().toISOString(),
     maintenance_date: payload.maintenance_date ?? null,
-    status: (payload.status as any) ?? 'Completed',
+    status: (payload.status as any) ?? 'Pending',
     notes: payload.notes ?? null,
   }).select('*').single()
   if (error) throw error
