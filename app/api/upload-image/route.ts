@@ -14,7 +14,13 @@ export async function POST(req: NextRequest) {
     const form = await req.formData()
     const file = form.get('file') as File | null
     const transformerId = form.get('transformer_id') as string | null
+    const inspectionId = form.get('inspection_id') as string | null
+    const imageType = form.get('image_type') as string | null
+    const uploaderName = form.get('uploader_name') as string | null
+    const environmentalCondition = form.get('environmental_condition') as string | null
+    const comments = form.get('comments') as string | null
     const label = (form.get('label') as string | null) || undefined
+    
     if (!file) return NextResponse.json({ error: 'Missing file' }, { status: 400 })
     if (!transformerId) return NextResponse.json({ error: 'Missing transformer_id' }, { status: 400 })
 
@@ -24,7 +30,14 @@ export async function POST(req: NextRequest) {
 
     const uploadResult = await new Promise<any>((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
-        { folder: 'transformers' },
+        { 
+          folder: inspectionId ? `inspections/${inspectionId}` : 'transformers',
+          tags: [
+            transformerId,
+            ...(inspectionId ? [inspectionId] : []),
+            ...(imageType ? [imageType] : [])
+          ]
+        },
         (error, result) => (error ? reject(error) : resolve(result))
       )
       stream.end(buffer)
@@ -32,16 +45,31 @@ export async function POST(req: NextRequest) {
 
     const imageUrl: string = uploadResult.secure_url
     const supabase = createServerClient()
+    
+    // Create a structured label that includes metadata
+    const metadata = {
+      originalName: label ?? uploadResult.original_filename,
+      imageType: imageType || 'maintenance',
+      uploaderName: uploaderName || 'Unknown',
+      environmentalCondition: environmentalCondition || null,
+      comments: comments || null,
+      inspectionId: inspectionId || null
+    }
+    
+    const structuredLabel = `${metadata.originalName} [${metadata.imageType}] by ${metadata.uploaderName}`
+    
+    // Use existing schema fields only
     const payload = {
       transformer_id: transformerId,
       url: imageUrl,
-      label: label ?? uploadResult.original_filename,
+      label: structuredLabel,
       captured_at: new Date().toISOString(),
     }
+    
     const { data, error } = await supabase.from('images').insert(payload).select('*').single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    return NextResponse.json({ url: imageUrl, image: data }, { status: 201 })
+    return NextResponse.json({ url: imageUrl, image: data, metadata }, { status: 201 })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Upload failed' }, { status: 500 })
   }

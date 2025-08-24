@@ -113,7 +113,7 @@ export default function InspectionsPage() {
       header: 'Actions',
       render: (_: string, r: Row) => (
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => router.push(`/transformer/${r.transformerId}`)}>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => router.push(`/inspections/${r.id}`)}>
             <Eye className="h-3 w-3" />
           </Button>
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onEdit(r.id)} title="Edit">
