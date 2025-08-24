@@ -35,7 +35,8 @@ export default function InspectionDetailPage() {
   // Inspection data
   const [inspection, setInspection] = useState<DbInspection | null>(null)
   const [transformer, setTransformer] = useState<DbTransformer | null>(null)
-  const [existingImages, setExistingImages] = useState<any[]>([])
+  const [baselineImages, setBaselineImages] = useState<any[]>([])
+  const [maintenanceImages, setMaintenanceImages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   
   // Image upload states
@@ -68,20 +69,28 @@ export default function InspectionDetailPage() {
         setInspection(currentInspection)
         setTransformer(relatedTransformer || null)
 
-        // Load existing images for this inspection
+        // Load existing images for this transformer and inspection
         try {
-          // Since we don't have inspection_id column yet, load by transformer_id
           const imagesResponse = await fetch(`/api/images?transformer_id=${currentInspection.transformer_id}`)
           if (imagesResponse.ok) {
             const imagesData = await imagesResponse.json()
-            // Filter images that might be related to this inspection by checking the label
-            const relatedImages = (imagesData.items || []).filter((img: any) => 
+            const allImages = imagesData.items || []
+            
+            // Separate baseline and maintenance images
+            const baseline = allImages.filter((img: any) => 
+              img.label && img.label.includes('[baseline]')
+            )
+            const maintenance = allImages.filter((img: any) => 
               img.label && (
-                img.label.includes(inspectionId) ||
-                img.label.includes(currentInspection.inspection_no || '')
+                img.label.includes('[maintenance]') && (
+                  img.label.includes(inspectionId) ||
+                  img.label.includes(currentInspection.inspection_no || '')
+                )
               )
             )
-            setExistingImages(relatedImages)
+            
+            setBaselineImages(baseline)
+            setMaintenanceImages(maintenance)
           }
         } catch (error) {
           console.error('Failed to load existing images:', error)
@@ -103,6 +112,34 @@ export default function InspectionDetailPage() {
     const file = event.target.files?.[0]
     if (file) {
       setSelectedFile(file)
+    }
+  }
+
+  const refreshImages = async () => {
+    try {
+      const imagesResponse = await fetch(`/api/images?transformer_id=${inspection?.transformer_id}`)
+      if (imagesResponse.ok) {
+        const imagesData = await imagesResponse.json()
+        const allImages = imagesData.items || []
+        
+        // Separate baseline and maintenance images
+        const baseline = allImages.filter((img: any) => 
+          img.label && img.label.includes('[baseline]')
+        )
+        const maintenance = allImages.filter((img: any) => 
+          img.label && (
+            img.label.includes('[maintenance]') && (
+              img.label.includes(inspectionId) ||
+              img.label.includes(inspection?.inspection_no || '')
+            )
+          )
+        )
+        
+        setBaselineImages(baseline)
+        setMaintenanceImages(maintenance)
+      }
+    } catch (error) {
+      console.error('Failed to refresh images:', error)
     }
   }
 
@@ -138,14 +175,25 @@ export default function InspectionDetailPage() {
       const form = new FormData()
       form.append('file', selectedFile)
       form.append('transformer_id', inspection?.transformer_id || '')
-      form.append('inspection_id', inspectionId)
-      form.append('image_type', imageType)
-      form.append('uploader_name', uploaderName)
-      // Include inspection number in the label for association
-      const labelWithInspection = `${selectedFile.name} - ${inspection?.inspection_no || inspectionId}`
-      form.append('label', labelWithInspection)
-      if (comments) form.append('comments', comments)
-      if (environmentalCondition) form.append('environmental_condition', environmentalCondition)
+      
+      // Create structured label with all metadata
+      let structuredLabel = `${selectedFile.name} [${imageType}]`
+      
+      if (imageType === "baseline") {
+        structuredLabel += ` [env:${environmentalCondition}]`
+      }
+      
+      if (comments) {
+        structuredLabel += ` [comments:${comments}]`
+      }
+      
+      if (imageType === "maintenance") {
+        structuredLabel += ` [inspection:${inspection?.inspection_no || inspectionId}]`
+      }
+      
+      structuredLabel += ` by ${uploaderName}`
+      
+      form.append('label', structuredLabel)
 
       const resp = await fetch('/api/upload-image', {
         method: 'POST',
@@ -169,28 +217,21 @@ export default function InspectionDetailPage() {
       setImageUploads((prev) => [...prev, newUpload])
 
       // Refresh existing images from the server
-      try {
-        const imagesResponse = await fetch(`/api/images?transformer_id=${inspection?.transformer_id}`)
-        if (imagesResponse.ok) {
-          const imagesData = await imagesResponse.json()
-          // Filter images that might be related to this inspection
-          const relatedImages = (imagesData.items || []).filter((img: any) => 
-            img.label && (
-              img.label.includes(inspectionId) ||
-              img.label.includes(inspection?.inspection_no || '')
-            )
-          )
-          setExistingImages(relatedImages)
-        }
-      } catch (error) {
-        console.error('Failed to refresh images:', error)
-      }
+      await refreshImages()
 
       // Simulate analysis completion
       setTimeout(() => {
         setImageUploads(prev => prev.map(img => 
           img.id === newUpload.id ? { ...img, status: 'complete' } : img
         ))
+        
+        // Scroll to comparison section if both baseline and maintenance images exist
+        setTimeout(() => {
+          const comparisonSection = document.querySelector('[data-comparison-section]')
+          if (comparisonSection) {
+            comparisonSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }
+        }, 500)
       }, 3000)
 
       // Reset form
@@ -305,45 +346,43 @@ export default function InspectionDetailPage() {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Thermal Image Upload */}
+          {/* Baseline Image Section */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="font-sans">Thermal Image</CardTitle>
+                  <CardTitle className="font-sans">Baseline Image</CardTitle>
                   <CardDescription className="font-serif">
-                    Upload a thermal image of the transformer to identify potential issues
+                    Reference image for future comparisons
                   </CardDescription>
                 </div>
-                <Badge variant="secondary">Pending</Badge>
+                <Badge variant="outline">
+                  {baselineImages.length > 0 ? 'Available' : 'Missing'}
+                </Badge>
               </div>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleImageUpload} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="imageType" className="font-serif">
-                    Image Type *
-                  </Label>
-                  <Select
-                    value={imageType}
-                    onValueChange={(value: "baseline" | "maintenance") => {
-                      setImageType(value)
-                      if (value !== "baseline") {
-                        setEnvironmentalCondition("")
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="font-serif">
-                      <SelectValue placeholder="Select image type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="baseline">Baseline</SelectItem>
-                      <SelectItem value="maintenance">Maintenance</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {baselineImages.length > 0 ? (
+                <div className="space-y-4">
+                  {/* Display existing baseline image */}
+                  <div className="border rounded-lg p-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-serif font-medium">Current Baseline</span>
+                      <Button variant="outline" size="sm" onClick={() => window.open(baselineImages[0].url, '_blank')}>
+                        <Eye className="h-4 w-4 mr-1" />
+                        View
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground font-serif mb-2">
+                      Uploaded: {new Date(baselineImages[0].captured_at).toLocaleString()}
+                    </p>
+                    <Button variant="destructive" size="sm" className="w-full">
+                      Replace Baseline Image
+                    </Button>
+                  </div>
                 </div>
-
-                {imageType === "baseline" && (
+              ) : (
+                <form onSubmit={handleImageUpload} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="weather" className="font-serif">
                       Environmental Condition *
@@ -359,14 +398,104 @@ export default function InspectionDetailPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                )}
 
+                  <div className="space-y-2">
+                    <Label htmlFor="uploaderName" className="font-serif">
+                      Uploader Name *
+                    </Label>
+                    <Input
+                      id="uploaderName"
+                      value={uploaderName}
+                      onChange={(e) => setUploaderName(e.target.value)}
+                      placeholder="Enter your name"
+                      className="font-serif"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="font-serif">Baseline Image File *</Label>
+                    <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                      <ImageIcon className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                      <div className="space-y-1">
+                        {selectedFile && imageType === "baseline" ? (
+                          <div>
+                            <p className="text-sm font-serif text-foreground font-medium">{selectedFile.name}</p>
+                            <p className="text-xs text-muted-foreground font-serif">
+                              {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-sm font-serif text-foreground">
+                              Drop baseline image here, or{" "}
+                              <label htmlFor="baseline-file-upload" className="text-primary hover:underline cursor-pointer">
+                                browse
+                              </label>
+                            </p>
+                            <p className="text-xs text-muted-foreground font-serif">
+                              Supports: JPG, PNG, TIFF (Max 10MB)
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <Input
+                        id="baseline-file-upload"
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={(e) => {
+                          handleFileSelect(e)
+                          setImageType("baseline")
+                        }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <Button 
+                    type="submit" 
+                    className="w-full font-serif" 
+                    disabled={isUploading || !selectedFile || imageType !== "baseline"}
+                  >
+                    {isUploading && imageType === "baseline" ? (
+                      <>
+                        <Clock className="mr-2 h-4 w-4 animate-spin" />
+                        Uploading Baseline...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Upload Baseline Image
+                      </>
+                    )}
+                  </Button>
+                </form>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Maintenance Image Section */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="font-sans">Thermal Image</CardTitle>
+                  <CardDescription className="font-serif">
+                    Upload maintenance image for this inspection
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary">Pending</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleImageUpload} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="uploaderName" className="font-serif">
+                  <Label htmlFor="uploaderName2" className="font-serif">
                     Uploader Name *
                   </Label>
                   <Input
-                    id="uploaderName"
+                    id="uploaderName2"
                     value={uploaderName}
                     onChange={(e) => setUploaderName(e.target.value)}
                     placeholder="Enter your name"
@@ -394,7 +523,7 @@ export default function InspectionDetailPage() {
                   <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
                     <ImageIcon className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
                     <div className="space-y-1">
-                      {selectedFile ? (
+                      {selectedFile && imageType === "maintenance" ? (
                         <div>
                           <p className="text-sm font-serif text-foreground font-medium">{selectedFile.name}</p>
                           <p className="text-xs text-muted-foreground font-serif">
@@ -404,8 +533,8 @@ export default function InspectionDetailPage() {
                       ) : (
                         <>
                           <p className="text-sm font-serif text-foreground">
-                            Drop your thermal image here, or{" "}
-                            <label htmlFor="file-upload" className="text-primary hover:underline cursor-pointer">
+                            Drop maintenance image here, or{" "}
+                            <label htmlFor="maintenance-file-upload" className="text-primary hover:underline cursor-pointer">
                               browse
                             </label>
                           </p>
@@ -416,18 +545,25 @@ export default function InspectionDetailPage() {
                       )}
                     </div>
                     <Input
-                      id="file-upload"
+                      id="maintenance-file-upload"
                       type="file"
                       className="hidden"
                       accept="image/*"
-                      onChange={handleFileSelect}
+                      onChange={(e) => {
+                        handleFileSelect(e)
+                        setImageType("maintenance")
+                      }}
                       required
                     />
                   </div>
                 </div>
 
-                <Button type="submit" className="w-full font-serif" disabled={isUploading}>
-                  {isUploading ? (
+                <Button 
+                  type="submit" 
+                  className="w-full font-serif" 
+                  disabled={isUploading || !selectedFile || imageType !== "maintenance"}
+                >
+                  {isUploading && imageType === "maintenance" ? (
                     <>
                       <Clock className="mr-2 h-4 w-4 animate-spin" />
                       Uploading...
@@ -440,95 +576,16 @@ export default function InspectionDetailPage() {
                   )}
                 </Button>
               </form>
-            </CardContent>
-          </Card>
 
-          {/* Progress Tracking */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-sans">Progress</CardTitle>
-              <CardDescription className="font-serif">
-                Track inspection workflow and image analysis status
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Thermal Image Upload Progress */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-yellow-600"></div>
-                    </div>
-                    <span className="text-sm font-serif">Thermal Image Upload</span>
-                  </div>
-                  <span className="text-sm text-yellow-600 font-serif">
-                    {isUploading ? `${uploadProgress}%` : imageUploads.length > 0 ? "Complete" : "Pending"}
-                  </span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-1.5 ml-8">
-                  <div
-                    className="h-1.5 rounded-full transition-all duration-300 bg-yellow-600"
-                    style={{ 
-                      width: isUploading ? `${uploadProgress}%` : imageUploads.length > 0 ? '100%' : '0%' 
-                    }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* AI Analysis Progress */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-yellow-600"></div>
-                    </div>
-                    <span className="text-sm font-serif">AI Analysis</span>
-                  </div>
-                  <span className="text-sm text-yellow-600 font-serif">
-                    {imageUploads.some(img => img.status === 'complete') ? "Complete" : 
-                     imageUploads.some(img => img.status === 'analyzing') ? "In Progress" : "Pending"}
-                  </span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-1.5 ml-8">
-                  <div
-                    className="h-1.5 rounded-full transition-all duration-500 bg-yellow-600"
-                    style={{ 
-                      width: imageUploads.some(img => img.status === 'complete') ? '100%' : 
-                             imageUploads.some(img => img.status === 'analyzing') ? '60%' : '0%'
-                    }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Thermal Image Review Progress */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center">
-                      <div className="w-2 h-2 rounded-full bg-yellow-600"></div>
-                    </div>
-                    <span className="text-sm font-serif">Thermal Image Review</span>
-                  </div>
-                  <span className="text-sm text-yellow-600 font-serif">Pending</span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-1.5 ml-8">
-                  <div className="h-1.5 rounded-full bg-yellow-600 w-0"></div>
-                </div>
-              </div>
-
-              {/* Upload History */}
-              {(imageUploads.length > 0 || existingImages.length > 0) && (
-                <div className="pt-4 border-t">
-                  <h4 className="font-sans font-semibold mb-3 text-sm">Thermal Images</h4>
+              {/* Display maintenance images for this inspection */}
+              {maintenanceImages.length > 0 && (
+                <div className="mt-6 pt-4 border-t">
+                  <h4 className="font-sans font-semibold mb-3 text-sm">Uploaded Images</h4>
                   <div className="space-y-2">
-                    {/* Existing images from database */}
-                    {existingImages.map((image) => {
-                      // Parse the structured label to extract metadata
+                    {maintenanceImages.map((image) => {
                       const labelParts = image.label.split('[')
                       const fileName = labelParts[0]?.trim() || image.label
-                      const typeMatch = image.label.match(/\[(baseline|maintenance)\]/)
                       const uploaderMatch = image.label.match(/by (.+)$/)
-                      const imageType = typeMatch ? typeMatch[1] : 'unknown'
                       const uploader = uploaderMatch ? uploaderMatch[1] : 'Unknown'
                       
                       return (
@@ -536,7 +593,7 @@ export default function InspectionDetailPage() {
                           <div className="flex-1">
                             <p className="text-sm font-serif font-medium">{fileName}</p>
                             <p className="text-xs text-muted-foreground font-serif">
-                              {imageType} • {uploader} • {new Date(image.captured_at).toLocaleString()}
+                              maintenance • {uploader} • {new Date(image.captured_at).toLocaleString()}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -548,35 +605,231 @@ export default function InspectionDetailPage() {
                         </div>
                       )
                     })}
-                    {/* Recently uploaded images */}
-                    {imageUploads.map((upload) => (
-                      <div key={upload.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
-                        <div className="flex-1">
-                          <p className="text-sm font-serif font-medium">{upload.fileName}</p>
-                          <p className="text-xs text-muted-foreground font-serif">
-                            {upload.imageType} • {upload.uploaderName} • {new Date(upload.uploadDateTime).toLocaleTimeString()}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                            <Eye className="h-3 w-3" />
-                          </Button>
-                          {upload.status === 'complete' ? (
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                          ) : upload.status === 'analyzing' ? (
-                            <Clock className="h-4 w-4 text-yellow-600 animate-spin" />
-                          ) : (
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
+
+        {/* Thermal Image Comparison Section */}
+        {baselineImages.length > 0 && maintenanceImages.length > 0 && (
+          <Card className="mt-6" data-comparison-section>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="font-sans">Thermal Image Comparison</CardTitle>
+                  <CardDescription className="font-serif">
+                    Side-by-side comparison of baseline and current thermal images
+                  </CardDescription>
+                </div>
+                <Badge variant="default">Analysis Ready</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Baseline Image */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-sans font-semibold text-sm">Baseline</h4>
+                    <Badge variant="outline" className="text-xs">Reference</Badge>
+                  </div>
+                  <div className="relative aspect-[4/3] bg-muted rounded-lg overflow-hidden border">
+                    <img
+                      src={baselineImages[0].url}
+                      alt="Baseline thermal image"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-serif">
+                      {new Date(baselineImages[0].captured_at).toLocaleDateString()} {new Date(baselineImages[0].captured_at).toLocaleTimeString()}
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground font-serif">
+                    {(() => {
+                      const envMatch = baselineImages[0].label.match(/\[env:([^\]]+)\]/)
+                      const uploaderMatch = baselineImages[0].label.match(/by (.+)$/)
+                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions • ${uploaderMatch ? uploaderMatch[1] : 'Unknown uploader'}`
+                    })()}
+                  </div>
+                </div>
+
+                {/* Current/Maintenance Image */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-sans font-semibold text-sm">Current</h4>
+                    <Badge variant="destructive" className="text-xs">Anomaly Detected</Badge>
+                  </div>
+                  <div className="relative aspect-[4/3] bg-muted rounded-lg overflow-hidden border">
+                    <img
+                      src={maintenanceImages[maintenanceImages.length - 1].url}
+                      alt="Current thermal image"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-serif">
+                      {new Date(maintenanceImages[maintenanceImages.length - 1].captured_at).toLocaleDateString()} {new Date(maintenanceImages[maintenanceImages.length - 1].captured_at).toLocaleTimeString()}
+                    </div>
+                    {/* Anomaly indicators */}
+                    <div className="absolute top-4 right-4 w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                    <div className="absolute top-1/3 left-1/2 w-16 h-16 border-2 border-red-500 rounded transform -translate-x-1/2 -translate-y-1/2"></div>
+                  </div>
+                  <div className="text-xs text-muted-foreground font-serif">
+                    {(() => {
+                      const uploaderMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/by (.+)$/)
+                      const commentsMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[comments:([^\]]+)\]/)
+                      return `Inspection #{inspection?.inspection_no} • ${uploaderMatch ? uploaderMatch[1] : 'Unknown uploader'}${commentsMatch ? ` • ${commentsMatch[1]}` : ''}`
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Analysis Summary */}
+              <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center mt-0.5">
+                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                  </div>
+                  <div className="flex-1">
+                    <h5 className="font-sans font-semibold text-sm text-red-800 mb-1">Temperature Anomaly Detected</h5>
+                    <p className="text-sm text-red-700 font-serif mb-2">
+                      Significant temperature increase detected compared to baseline. Hot spot identified in the upper section of the transformer.
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-serif">
+                        Δ Temperature: +15°C
+                      </span>
+                      <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-serif">
+                        Risk Level: High
+                      </span>
+                      <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-serif">
+                        Action Required: Immediate
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 mt-4">
+                <Button variant="outline" size="sm" className="font-serif">
+                  <Eye className="h-4 w-4 mr-2" />
+                  View Full Analysis
+                </Button>
+                <Button variant="outline" size="sm" className="font-serif">
+                  Export Report
+                </Button>
+                <Button variant="outline" size="sm" className="font-serif">
+                  Schedule Maintenance
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Progress Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-sans">Progress</CardTitle>
+            <CardDescription className="font-serif">
+              Track inspection workflow and image analysis status
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Thermal Image Upload Progress */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-yellow-600"></div>
+                  </div>
+                  <span className="text-sm font-serif">Thermal Image Upload</span>
+                </div>
+                <span className="text-sm text-yellow-600 font-serif">
+                  {isUploading ? `${uploadProgress}%` : (baselineImages.length > 0 || maintenanceImages.length > 0) ? "Complete" : "Pending"}
+                </span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5 ml-8">
+                <div
+                  className="h-1.5 rounded-full transition-all duration-300 bg-yellow-600"
+                  style={{ 
+                    width: isUploading ? `${uploadProgress}%` : (baselineImages.length > 0 || maintenanceImages.length > 0) ? '100%' : '0%' 
+                  }}
+                ></div>
+              </div>
+            </div>
+
+            {/* AI Analysis Progress */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-yellow-600"></div>
+                  </div>
+                  <span className="text-sm font-serif">AI Analysis</span>
+                </div>
+                <span className="text-sm text-yellow-600 font-serif">
+                  {imageUploads.some(img => img.status === 'complete') ? "Complete" : 
+                   imageUploads.some(img => img.status === 'analyzing') ? "In Progress" : "Pending"}
+                </span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5 ml-8">
+                <div
+                  className="h-1.5 rounded-full transition-all duration-500 bg-yellow-600"
+                  style={{ 
+                    width: imageUploads.some(img => img.status === 'complete') ? '100%' : 
+                           imageUploads.some(img => img.status === 'analyzing') ? '60%' : '0%'
+                  }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Thermal Image Review Progress */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-yellow-600"></div>
+                  </div>
+                  <span className="text-sm font-serif">Thermal Image Review</span>
+                </div>
+                <span className="text-sm text-yellow-600 font-serif">Pending</span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5 ml-8">
+                <div className="h-1.5 rounded-full bg-yellow-600 w-0"></div>
+              </div>
+            </div>
+
+            {/* Recently uploaded images */}
+            {imageUploads.length > 0 && (
+              <div className="pt-4 border-t">
+                <h4 className="font-sans font-semibold mb-3 text-sm">Recent Activity</h4>
+                <div className="space-y-2">
+                  {imageUploads.map((upload) => (
+                    <div key={upload.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
+                      <div className="flex-1">
+                        <p className="text-sm font-serif font-medium">{upload.fileName}</p>
+                        <p className="text-xs text-muted-foreground font-serif">
+                          {upload.imageType} • {upload.uploaderName} • {new Date(upload.uploadDateTime).toLocaleTimeString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          <Eye className="h-3 w-3" />
+                        </Button>
+                        {upload.status === 'complete' ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : upload.status === 'analyzing' ? (
+                          <Clock className="h-4 w-4 text-yellow-600 animate-spin" />
+                        ) : (
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </MainLayout>
   )
