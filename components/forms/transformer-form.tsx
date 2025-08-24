@@ -16,7 +16,7 @@ interface TransformerFormData {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Power" | "Bulk"
+  type: "Distribution" | "Bulk"
   capacity: string
   location: string
 }
@@ -26,7 +26,7 @@ interface Transformer {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Power" | "Bulk"
+  type: "Distribution" | "Bulk"
   capacity: string
   location: string
   status: "Normal" | "Warning" | "Critical"
@@ -54,7 +54,7 @@ const regions = [
   "Kalutara",
 ]
 
-const transformerTypes = ["Distribution", "Power", "Bulk"]
+const transformerTypes: ("Distribution" | "Bulk")[] = ["Distribution", "Bulk"]
 
 export function TransformerForm({ transformer, onSubmit, onCancel, existingTransformers }: TransformerFormProps) {
   const [formData, setFormData] = useState<TransformerFormData>({
@@ -239,16 +239,20 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
               <Label htmlFor="type" className="font-serif">
                 Type <span className="text-destructive">*</span>
               </Label>
-              <Select value={formData.type} onValueChange={(value) => handleInputChange("type", value)}>
+              <Select 
+                value={formData.type} 
+                onValueChange={(value) => handleInputChange("type", value as "Distribution" | "Bulk")}
+              >
                 <SelectTrigger className={`font-serif ${errors.type ? "border-destructive" : ""}`}>
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {transformerTypes.map((type) => (
-                    <SelectItem key={type} value={type} className="font-serif">
-                      {type}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="Distribution" className="font-serif">
+                    Distribution
+                  </SelectItem>
+                  <SelectItem value="Bulk" className="font-serif">
+                    Bulk
+                  </SelectItem>
                 </SelectContent>
               </Select>
               {errors.type && (

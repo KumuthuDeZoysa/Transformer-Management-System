@@ -46,14 +46,15 @@ export default function InspectionsPage() {
   useEffect(() => {
     const load = async () => {
       try {
-  const [ins, transformers] = await Promise.all([
+        const [ins, transformers] = await Promise.all([
           fetchInspections(),
           fetchTransformersFromDb(),
         ])
         const tMap = new Map<string, DbTransformer>()
         transformers.forEach((t) => tMap.set(t.id, t))
         setTransformerMap(tMap)
-  setTransformers(transformers)
+        setTransformers(transformers)
+        
         const mapped: Row[] = ins.map((i) => ({
           id: i.id,
           transformerId: tMap.get(i.transformer_id)?.code || i.transformer_id,
@@ -62,7 +63,76 @@ export default function InspectionsPage() {
           maintenanceDate: i.maintenance_date ? new Date(i.maintenance_date).toLocaleString() : '—',
           status: i.status,
         }))
-        setRows(mapped)
+
+        // Add some demo data to show maintenance dates functionality
+        const demoData: Row[] = [
+          {
+            id: 'demo-1',
+            transformerId: 'AZ-8890',
+            inspectionNo: '0013232345',
+            inspectedDate: '8/24/2025, 11:40:00 AM',
+            maintenanceDate: '8/26/2025, 2:30:00 PM',
+            status: 'Completed'
+          },
+          {
+            id: 'demo-2', 
+            transformerId: 'AZ-4613',
+            inspectionNo: '0013232346',
+            inspectedDate: '8/23/2025, 7:14:00 PM',
+            maintenanceDate: '—',
+            status: 'Pending'
+          },
+          {
+            id: 'demo-3',
+            transformerId: 'AZ-4613', 
+            inspectionNo: '0013232341',
+            inspectedDate: '8/23/2025, 11:28:11 AM',
+            maintenanceDate: '—',
+            status: 'In Progress'
+          },
+          {
+            id: 'demo-4',
+            transformerId: 'AZ-8890',
+            inspectionNo: '0013232344',
+            inspectedDate: '8/22/2025, 3:39:00 PM',
+            maintenanceDate: '8/23/2025, 10:15:00 AM',
+            status: 'Completed'
+          },
+          {
+            id: 'demo-5',
+            transformerId: 'AZ-7316',
+            inspectionNo: '0013232343',
+            inspectedDate: '8/21/2025, 11:17:00 AM',
+            maintenanceDate: '—',
+            status: 'Pending'
+          },
+          {
+            id: 'demo-6',
+            transformerId: 'AX-8993',
+            inspectionNo: '0013232342',
+            inspectedDate: '8/20/2025, 10:15:00 AM',
+            maintenanceDate: '8/22/2025, 4:45:00 PM',
+            status: 'Completed'
+          },
+          {
+            id: 'demo-7',
+            transformerId: 'EN-122A',
+            inspectionNo: '0013232340',
+            inspectedDate: '8/19/2025, 9:30:00 AM',
+            maintenanceDate: '8/21/2025, 1:20:00 PM',
+            status: 'Completed'
+          },
+          {
+            id: 'demo-8',
+            transformerId: 'LP-2567',
+            inspectionNo: '0013232339',
+            inspectedDate: '8/18/2025, 2:45:00 PM',
+            maintenanceDate: '—',
+            status: 'In Progress'
+          }
+        ]
+        
+        setRows([...mapped, ...demoData])
 
         // If a transformer is passed via query, preselect it and open the Add dialog
         const qpId = searchParams.get('transformer_id') || ''
@@ -100,7 +170,26 @@ export default function InspectionsPage() {
     { key: 'transformerId', header: 'Transformer No.' },
     { key: 'inspectionNo', header: 'Inspection No' },
     { key: 'inspectedDate', header: 'Inspected Date' },
-    { key: 'maintenanceDate', header: 'Maintenance Date' },
+    { 
+      key: 'maintenanceDate', 
+      header: 'Maintenance Date',
+      render: (value: string, row: Row) => {
+        if (row.status === 'Completed' && value !== '—') {
+          return (
+            <div className="text-green-700 font-medium">
+              {value}
+            </div>
+          )
+        } else if (row.status === 'Completed' && value === '—') {
+          return (
+            <div className="text-amber-600 font-medium">
+              Pending
+            </div>
+          )
+        }
+        return <span className="text-muted-foreground">{value}</span>
+      }
+    },
     {
       key: 'status',
       header: 'Status',
