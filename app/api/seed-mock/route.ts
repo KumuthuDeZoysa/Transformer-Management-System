@@ -13,7 +13,7 @@ const mockTransformers = [
     created_at: '2023-01-20T10:00:00Z', updated_at: '2023-05-22T09:30:00Z',
   },
   {
-    code: 'AZ-7316', pole_no: 'EN-125-C', region: 'Colombo', type: 'Power', capacity: '500 kVA',
+    code: 'AZ-7316', pole_no: 'EN-125-C', region: 'Colombo', type: 'Bulk', capacity: '500 kVA',
     location: 'Colombo Fort Railway Station', status: 'Critical', last_inspection: '2023-05-23T14:15:00Z',
     created_at: '2023-02-01T09:00:00Z', updated_at: '2023-05-23T14:15:00Z',
   },
@@ -23,7 +23,7 @@ const mockTransformers = [
     created_at: '2023-02-10T11:00:00Z', updated_at: '2023-05-24T10:45:00Z',
   },
   {
-    code: 'AX-8993', pole_no: 'EN-127-E', region: 'Mount Lavinia', type: 'Power', capacity: '315 kVA',
+    code: 'AX-8993', pole_no: 'EN-127-E', region: 'Mount Lavinia', type: 'Bulk', capacity: '315 kVA',
     location: 'Mount Lavinia Hotel Area', status: 'Normal', last_inspection: '2023-05-25T15:20:00Z',
     created_at: '2023-02-15T12:00:00Z', updated_at: '2023-05-25T15:20:00Z',
   },

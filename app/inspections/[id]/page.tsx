@@ -151,8 +151,8 @@ export default function InspectionDetailPage() {
       return
     }
 
-    if (imageType === "baseline" && !environmentalCondition) {
-      alert("Please select environmental condition for baseline images")
+    if (!environmentalCondition) {
+      alert("Please select environmental condition")
       return
     }
 
@@ -179,9 +179,8 @@ export default function InspectionDetailPage() {
       // Create structured label with all metadata
       let structuredLabel = `${selectedFile.name} [${imageType}]`
       
-      if (imageType === "baseline") {
-        structuredLabel += ` [env:${environmentalCondition}]`
-      }
+      // Add environmental condition for both baseline and maintenance
+      structuredLabel += ` [env:${environmentalCondition}]`
       
       if (comments) {
         structuredLabel += ` [comments:${comments}]`
@@ -317,7 +316,7 @@ export default function InspectionDetailPage() {
         </div>
 
         {/* Transformer Info Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className={`grid gap-4 ${inspection.status === 'Pending' ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-4'}`}>
           <Card>
             <CardContent className="p-4 text-center">
               <div className="text-sm text-muted-foreground font-serif">Transformer No.</div>
@@ -336,12 +335,14 @@ export default function InspectionDetailPage() {
               <div className="text-lg font-sans font-semibold">{transformer.region || 'N/A'}</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <div className="text-sm text-muted-foreground font-serif">Inspected By</div>
-              <div className="text-lg font-sans font-semibold">A-110</div>
-            </CardContent>
-          </Card>
+          {inspection.status !== 'Pending' && (
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="text-sm text-muted-foreground font-serif">Inspected By</div>
+                <div className="text-lg font-sans font-semibold">A-110</div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Main Content Grid */}
@@ -505,6 +506,22 @@ export default function InspectionDetailPage() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="environmentalCondition2" className="font-serif">
+                    Environmental Condition *
+                  </Label>
+                  <Select value={environmentalCondition} onValueChange={setEnvironmentalCondition}>
+                    <SelectTrigger className="font-serif">
+                      <SelectValue placeholder="Select environmental condition" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sunny">Sunny</SelectItem>
+                      <SelectItem value="cloudy">Cloudy</SelectItem>
+                      <SelectItem value="rainy">Rainy</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="comments" className="font-serif">
                     Comments (Optional)
                   </Label>
@@ -586,14 +603,16 @@ export default function InspectionDetailPage() {
                       const labelParts = image.label.split('[')
                       const fileName = labelParts[0]?.trim() || image.label
                       const uploaderMatch = image.label.match(/by (.+)$/)
+                      const envMatch = image.label.match(/\[env:([^\]]+)\]/)
                       const uploader = uploaderMatch ? uploaderMatch[1] : 'Unknown'
+                      const environment = envMatch ? envMatch[1] : 'Unknown'
                       
                       return (
                         <div key={image.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
                           <div className="flex-1">
                             <p className="text-sm font-serif font-medium">{fileName}</p>
                             <p className="text-xs text-muted-foreground font-serif">
-                              maintenance • {uploader} • {new Date(image.captured_at).toLocaleString()}
+                              maintenance • {environment} • {uploader} • {new Date(image.captured_at).toLocaleString()}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -675,8 +694,9 @@ export default function InspectionDetailPage() {
                   <div className="text-xs text-muted-foreground font-serif">
                     {(() => {
                       const uploaderMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/by (.+)$/)
+                      const envMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[env:([^\]]+)\]/)
                       const commentsMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[comments:([^\]]+)\]/)
-                      return `Inspection #{inspection?.inspection_no} • ${uploaderMatch ? uploaderMatch[1] : 'Unknown uploader'}${commentsMatch ? ` • ${commentsMatch[1]}` : ''}`
+                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions • Inspection #${inspection?.inspection_no} • ${uploaderMatch ? uploaderMatch[1] : 'Unknown uploader'}${commentsMatch ? ` • ${commentsMatch[1]}` : ''}`
                     })()}
                   </div>
                 </div>

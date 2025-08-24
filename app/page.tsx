@@ -20,7 +20,7 @@ interface TransformerFormData {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Power" | "Bulk"
+  type: "Distribution" | "Bulk"
   capacity: string
   location: string
 }
