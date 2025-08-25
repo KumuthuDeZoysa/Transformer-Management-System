@@ -9,7 +9,6 @@ import { Zap, Plus, Images, Settings, Menu, X, ListChecks } from "lucide-react"
 
 const navigation = [
   { name: "Transformers", href: "/", icon: Zap },
-  { name: "Add/Edit Transformer", href: "/transformer/edit", icon: Plus },
   { name: "Gallery", href: "/gallery", icon: Images },
   { name: "Inspections", href: "/inspections", icon: ListChecks },
   { name: "Settings", href: "/settings", icon: Settings },

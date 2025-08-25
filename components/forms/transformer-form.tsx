@@ -12,11 +12,11 @@ import { AlertCircle, Save, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 // Form data interface - basic transformer data without metadata
-interface TransformerFormData {
+export interface TransformerFormData {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Bulk"
+  type: "Distribution" | "Bulk" | "Power"
   capacity: string
   location: string
 }
@@ -26,7 +26,7 @@ interface Transformer {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Bulk"
+  type: "Distribution" | "Bulk" | "Power"
   capacity: string
   location: string
   status: "Normal" | "Warning" | "Critical"
@@ -54,7 +54,7 @@ const regions = [
   "Kalutara",
 ]
 
-const transformerTypes: ("Distribution" | "Bulk")[] = ["Distribution", "Bulk"]
+const transformerTypes: ("Distribution" | "Bulk" | "Power")[] = ["Distribution", "Bulk", "Power"]
 
 export function TransformerForm({ transformer, onSubmit, onCancel, existingTransformers }: TransformerFormProps) {
   const [formData, setFormData] = useState<TransformerFormData>({
@@ -112,10 +112,10 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
     if (!formData.capacity.trim()) {
       newErrors.capacity = "Capacity is required"
     } else {
-      // Validate capacity format (number + kVA)
-      const capacityRegex = /^\d+(\.\d+)?\s*kVA$/i
-      if (!capacityRegex.test(formData.capacity)) {
-        newErrors.capacity = "Capacity must be in format: '100 kVA'"
+      // Validate capacity is a number only
+      const capacityNumberRegex = /^\d+(\.\d+)?$/
+      if (!capacityNumberRegex.test(formData.capacity.trim())) {
+        newErrors.capacity = "Capacity must be a number (kVA)"
       }
     }
 
@@ -140,7 +140,9 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      onSubmit(formData)
+      // Append ' kVA' to capacity before submit
+      const submitData = { ...formData, capacity: formData.capacity.trim() + ' kVA' }
+      onSubmit(submitData)
     } catch (error) {
       console.error("Error submitting form:", error)
     } finally {
@@ -150,7 +152,6 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
 
   const handleInputChange = (field: keyof TransformerFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-
     // Clear error when user starts typing
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: "" }))
@@ -266,14 +267,15 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
             {/* Capacity */}
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="capacity" className="font-serif">
-                Capacity <span className="text-destructive">*</span>
+                Capacity <span className="text-destructive">*</span> <span className="text-xs text-muted-foreground">(kVA)</span>
               </Label>
               <Input
                 id="capacity"
                 value={formData.capacity}
                 onChange={(e) => handleInputChange("capacity", e.target.value)}
-                placeholder="e.g., 100 kVA"
+                placeholder="e.g., 100 (kVA)"
                 className={`font-serif ${errors.capacity ? "border-destructive" : ""}`}
+                inputMode="numeric"
               />
               {errors.capacity && (
                 <Alert variant="destructive">
@@ -330,3 +332,4 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
     </Card>
   )
 }
+

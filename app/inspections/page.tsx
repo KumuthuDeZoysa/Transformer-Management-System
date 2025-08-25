@@ -14,6 +14,7 @@ import { Eye, Search, Plus, Edit, Trash2 } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import DeleteConfirmDialog from '@/components/ui/delete-confirm-dialog'
 
 type Row = {
   id: string
@@ -42,6 +43,8 @@ export default function InspectionsPage() {
     inspected_time: '',
     branch: '',
   })
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -304,10 +307,15 @@ export default function InspectionsPage() {
     setAddOpen(true)
   }
 
-  const onDelete = async (id: string) => {
-    if (!confirm('Delete this inspection?')) return
+  const onDelete = (id: string) => {
+    setDeleteTargetId(id)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return
     try {
-      await deleteInspection(id)
+      await deleteInspection(deleteTargetId)
       const latest = await fetchInspections()
       const mapped: Row[] = latest.map((i) => ({
         id: i.id,
@@ -320,123 +328,142 @@ export default function InspectionsPage() {
       setRows(mapped)
     } catch (e: any) {
       alert(e.message || 'Delete failed')
+    } finally {
+      setDeleteDialogOpen(false)
+      setDeleteTargetId(null)
     }
   }
 
+  const closeDeleteDialog = () => {
+    setDeleteDialogOpen(false)
+    setDeleteTargetId(null)
+  }
+
   return (
-    <MainLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-sans font-bold text-foreground">All Inspections</h1>
-            <p className="text-muted-foreground font-serif">Browse and manage inspection records</p>
-          </div>
-          <Button className="button-primary cursor-pointer hover:bg-primary/90 transition-colors" onClick={() => setAddOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Inspection
-          </Button>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-sans">Filters</CardTitle>
-            <CardDescription className="font-serif">Search and filter inspections</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-10 font-serif" placeholder="Search Transformer or Inspection No" value={search} onChange={(e) => setSearch(e.target.value)} />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="font-serif">
-                  <SelectValue placeholder="All Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="in progress">In Progress</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-              <div />
+    <>
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete Inspection"
+        description="Are you sure you want to delete this inspection? This action cannot be undone."
+        onConfirm={confirmDelete}
+        onCancel={closeDeleteDialog}
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
+      <MainLayout>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-sans font-bold text-foreground">All Inspections</h1>
+              <p className="text-muted-foreground font-serif">Browse and manage inspection records</p>
             </div>
-          </CardContent>
-        </Card>
+            <Button className="button-primary cursor-pointer hover:bg-primary/90 transition-colors" onClick={() => setAddOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Inspection
+            </Button>
+          </div>
 
-        <DataTable
-          data={filtered}
-          columns={columns as any}
-          title="Inspections"
-          description="Inspection records pulled from the database"
-          emptyMessage={loading ? 'Loading…' : 'No inspections found.'}
-        />
-
-        <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) resetForm() }}>
-          <DialogContent className="max-w-xl">
-            <DialogHeader>
-              <DialogTitle className="font-sans">{editingId ? 'Edit Inspection' : 'Add Inspection'}</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div className="md:col-span-2">
-                <label className="text-sm text-muted-foreground font-serif">Transformer No.</label>
-                <Select value={form.transformer_id} onValueChange={(v) => {
-                  const transformer = transformers.find(t => t.id === v)
-                  setForm((f) => ({ 
-                    ...f, 
-                    transformer_id: v,
-                    branch: transformer?.region || '' // Auto-fill branch from transformer region
-                  }))
-                }}>
-                  <SelectTrigger className="font-serif mt-1">
-                    <SelectValue placeholder="Select transformer" />
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-sans">Filters</CardTitle>
+              <CardDescription className="font-serif">Search and filter inspections</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input className="pl-10 font-serif" placeholder="Search Transformer or Inspection No" value={search} onChange={(e) => setSearch(e.target.value)} />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="font-serif">
+                    <SelectValue placeholder="All Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    {transformers.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.code || t.id} — {t.region || t.location || '-'}</SelectItem>
-                    ))}
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="in progress">In Progress</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
                   </SelectContent>
                 </Select>
+                <div />
               </div>
+            </CardContent>
+          </Card>
 
-              <div>
-                <label className="text-sm text-muted-foreground font-serif">Branch</label>
-                <Input 
-                  className="font-serif mt-1" 
-                  placeholder="Branch/Region" 
-                  value={form.branch}
-                  onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))} 
-                />
-              </div>
+          <DataTable
+            data={filtered}
+            columns={columns as any}
+            title="Inspections"
+            description="Inspection records pulled from the database"
+            emptyMessage={loading ? 'Loading…' : 'No inspections found.'}
+          />
 
-              <div>
-                <label className="text-sm text-muted-foreground font-serif">Date of Inspection</label>
-                <Input 
-                  type="date" 
-                  className="font-serif mt-1" 
-                  value={form.inspected_date}
-                  onChange={(e) => setForm((f) => ({ ...f, inspected_date: e.target.value }))} 
-                />
-              </div>
+          <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) resetForm() }}>
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle className="font-sans">{editingId ? 'Edit Inspection' : 'Add Inspection'}</DialogTitle>
+              </DialogHeader>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <div className="md:col-span-2">
+                  <label className="text-sm text-muted-foreground font-serif">Transformer No.</label>
+                  <Select value={form.transformer_id} onValueChange={(v) => {
+                    const transformer = transformers.find(t => t.id === v)
+                    setForm((f) => ({ 
+                      ...f, 
+                      transformer_id: v,
+                      branch: transformer?.region || '' // Auto-fill branch from transformer region
+                    }))
+                  }}>
+                    <SelectTrigger className="font-serif mt-1">
+                      <SelectValue placeholder="Select transformer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {transformers.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>{t.code || t.id} — {t.region || t.location || '-'}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="md:col-span-2">
-                <label className="text-sm text-muted-foreground font-serif">Time</label>
-                <Input 
-                  type="time" 
-                  className="font-serif mt-1" 
-                  value={form.inspected_time}
-                  onChange={(e) => setForm((f) => ({ ...f, inspected_time: e.target.value }))} 
-                />
-              </div>
+                <div>
+                  <label className="text-sm text-muted-foreground font-serif">Branch</label>
+                  <Input 
+                    className="font-serif mt-1" 
+                    placeholder="Branch/Region" 
+                    value={form.branch}
+                    onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))} 
+                  />
+                </div>
 
-              <div className="md:col-span-2 flex justify-end gap-2 pt-2">
-                <Button variant="outline" className="bg-transparent font-serif" onClick={() => { setAddOpen(false); setEditingId(null); resetForm() }}>Cancel</Button>
-                <Button className="font-serif" onClick={submit} disabled={saving}>{saving ? 'Saving...' : (editingId ? 'Save Changes' : 'Save Inspection')}</Button>
+                <div>
+                  <label className="text-sm text-muted-foreground font-serif">Date of Inspection</label>
+                  <Input 
+                    type="date" 
+                    className="font-serif mt-1" 
+                    value={form.inspected_date}
+                    onChange={(e) => setForm((f) => ({ ...f, inspected_date: e.target.value }))} 
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="text-sm text-muted-foreground font-serif">Time</label>
+                  <Input 
+                    type="time" 
+                    className="font-serif mt-1" 
+                    value={form.inspected_time}
+                    onChange={(e) => setForm((f) => ({ ...f, inspected_time: e.target.value }))} 
+                  />
+                </div>
+
+                <div className="md:col-span-2 flex justify-end gap-2 pt-2">
+                  <Button variant="outline" className="bg-transparent font-serif cursor-pointer hover:bg-accent transition-colors" onClick={() => { setAddOpen(false); setEditingId(null); resetForm() }}>Cancel</Button>
+                  <Button className="font-serif cursor-pointer hover:bg-primary/90 transition-colors" onClick={submit} disabled={saving}>{saving ? 'Saving...' : (editingId ? 'Save Changes' : 'Save Inspection')}</Button>
+                </div>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </MainLayout>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </MainLayout>
+    </>
   )
 }
