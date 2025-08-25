@@ -12,11 +12,11 @@ import { AlertCircle, Save, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 // Form data interface - basic transformer data without metadata
-interface TransformerFormData {
+export interface TransformerFormData {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Bulk"
+  type: "Distribution" | "Bulk" | "Power"
   capacity: string
   location: string
 }
@@ -26,7 +26,7 @@ interface Transformer {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Bulk"
+  type: "Distribution" | "Bulk" | "Power"
   capacity: string
   location: string
   status: "Normal" | "Warning" | "Critical"
@@ -54,7 +54,7 @@ const regions = [
   "Kalutara",
 ]
 
-const transformerTypes: ("Distribution" | "Bulk")[] = ["Distribution", "Bulk"]
+const transformerTypes: ("Distribution" | "Bulk" | "Power")[] = ["Distribution", "Bulk", "Power"]
 
 export function TransformerForm({ transformer, onSubmit, onCancel, existingTransformers }: TransformerFormProps) {
   const [formData, setFormData] = useState<TransformerFormData>({

@@ -1,6 +1,7 @@
 "use client"
 
 import { MainLayout } from "@/components/layout/main-layout"
+import DeleteConfirmDialog from "@/components/ui/delete-confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -11,19 +12,12 @@ import { AlertTriangle, CheckCircle, Clock, Plus, Eye, Edit, Trash2, Search, Zap
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { TransformerForm } from "@/components/forms/transformer-form"
+import type { TransformerFormData } from "@/components/forms/transformer-form"
 import { transformerApi, statsApi, type Transformer } from "@/lib/mock-api"
 import { fetchTransformersFromDb } from "@/lib/db-api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-// Form data interface for the transformer form
-interface TransformerFormData {
-  id: string
-  poleNo: string
-  region: string
-  type: "Distribution" | "Bulk"
-  capacity: string
-  location: string
-}
+// (Removed duplicate TransformerFormData interface, now imported from the form)
 
 const recentAlerts = [
   {
@@ -55,6 +49,8 @@ export default function TransformersPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingTransformer, setEditingTransformer] = useState<Transformer | undefined>()
   const [stats, setStats] = useState<any>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   useEffect(() => {
     const loadData = async () => {
@@ -256,35 +252,42 @@ export default function TransformersPage() {
     setShowForm(true)
   }
 
-  const handleDelete = async (transformerId: string) => {
-    if (confirm("Are you sure you want to delete this transformer?")) {
-      try {
-        const res = await fetch(`/api/transformers/${transformerId}`, { method: 'DELETE' })
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}))
-          throw new Error(j?.error || 'Delete failed')
-        }
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          const mapped: Transformer[] = dbRows.map((r) => ({
-            id: r.code || r.id,
-            poleNo: r.pole_no || "",
-            region: r.region || "",
-            type: (r.type as any) || "Distribution",
-            capacity: r.capacity || "",
-            location: r.location || "",
-            status: (r.status as any) || "Normal",
-            lastInspection: r.last_inspection || "Not inspected",
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-          setTransformersData(mapped)
-        } catch {
-          setTransformersData((prev) => prev.filter((t) => t.id !== transformerId))
-        }
-      } catch (error) {
-        console.error("Failed to delete transformer:", error)
+  const handleDelete = (transformerId: string) => {
+    setDeleteTargetId(transformerId)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return
+    try {
+      const res = await fetch(`/api/transformers/${deleteTargetId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j?.error || 'Delete failed')
       }
+      try {
+        const dbRows = await fetchTransformersFromDb()
+        const mapped: Transformer[] = dbRows.map((r) => ({
+          id: r.code || r.id,
+          poleNo: r.pole_no || "",
+          region: r.region || "",
+          type: (r.type as any) || "Distribution",
+          capacity: r.capacity || "",
+          location: r.location || "",
+          status: (r.status as any) || "Normal",
+          lastInspection: r.last_inspection || "Not inspected",
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        }))
+        setTransformersData(mapped)
+      } catch {
+        setTransformersData((prev) => prev.filter((t) => t.id !== deleteTargetId))
+      }
+    } catch (error) {
+      console.error("Failed to delete transformer:", error)
+    } finally {
+      setDeleteDialogOpen(false)
+      setDeleteTargetId(null)
     }
   }
 
@@ -345,6 +348,7 @@ export default function TransformersPage() {
             size="sm"
             className="h-8 w-8 p-0 text-destructive hover:text-destructive"
             onClick={() => handleDelete(transformer.id)}
+            title="Delete"
           >
             <Trash2 className="h-3 w-3" />
           </Button>
@@ -384,125 +388,136 @@ export default function TransformersPage() {
   }
 
   return (
-    <MainLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-sans font-bold text-foreground">Transformer Management</h1>
-            <p className="text-muted-foreground font-serif">Manage transformer records and inspections</p>
+    <>
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete Transformer"
+        description="Are you sure you want to delete this transformer? This action cannot be undone."
+        onConfirm={confirmDelete}
+        onCancel={() => { setDeleteDialogOpen(false); setDeleteTargetId(null) }}
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
+      <MainLayout>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-sans font-bold text-foreground">Transformer Management</h1>
+              <p className="text-muted-foreground font-serif">Manage transformer records and inspections</p>
+            </div>
+            <Button className="button-primary" onClick={() => setShowForm(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Transformer
+            </Button>
           </div>
-          <Button className="button-primary" onClick={() => setShowForm(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Transformer
-          </Button>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <StatsCard
-            title="Total Transformers"
-            value={stats?.totalTransformers || 0}
-            description="Currently operational"
-            icon={Zap}
-          />
-          <StatsCard
-            title="Pending Inspections"
-            value={stats?.pendingInspections || 0}
-            description="Require attention"
-            icon={Clock}
-          />
-          <StatsCard
-            title="Critical Alerts"
-            value={stats?.criticalAlerts || 0}
-            description="Immediate action needed"
-            icon={AlertTriangle}
-            className="text-destructive"
-          />
-          <StatsCard
-            title="Inspections Today"
-            value={stats?.inspectionsToday || 0}
-            description="Completed successfully"
-            icon={Activity}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <div className="lg:col-span-3">
-            <DataTable
-              data={filteredTransformers}
-              columns={columns}
-              title="Transformers"
-              description="Manage transformer records and data"
-              actions={
-                <div className="flex flex-col sm:flex-row gap-4 w-full">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search by Transformer No. or Location..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 font-serif focus-ring"
-                    />
-                  </div>
-                  <Select value={regionFilter} onValueChange={setRegionFilter}>
-                    <SelectTrigger className="w-full sm:w-[180px] font-serif focus-ring">
-                      <SelectValue placeholder="Filter by Region" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Regions</SelectItem>
-                      {uniqueRegions.map((region) => (
-                        <SelectItem key={region} value={region}>
-                          {region}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger className="w-full sm:w-[180px] font-serif focus-ring">
-                      <SelectValue placeholder="Filter by Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      {uniqueTypes.map((type) => (
-                        <SelectItem key={type} value={type}>
-                          {type}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              }
-              emptyMessage="No transformers found matching your search criteria."
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <StatsCard
+              title="Total Transformers"
+              value={stats?.totalTransformers || 0}
+              description="Currently operational"
+              icon={Zap}
+            />
+            <StatsCard
+              title="Pending Inspections"
+              value={stats?.pendingInspections || 0}
+              description="Require attention"
+              icon={Clock}
+            />
+            <StatsCard
+              title="Critical Alerts"
+              value={stats?.criticalAlerts || 0}
+              description="Immediate action needed"
+              icon={AlertTriangle}
+              className="text-destructive"
+            />
+            <StatsCard
+              title="Inspections Today"
+              value={stats?.inspectionsToday || 0}
+              description="Completed successfully"
+              icon={Activity}
             />
           </div>
 
-          <Card className="card-hover">
-            <CardHeader>
-              <CardTitle className="font-sans">Recent Alerts</CardTitle>
-              <CardDescription className="font-serif">Latest system notifications</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {recentAlerts.map((alert, index) => (
-                <div
-                  key={index}
-                  className="flex items-start space-x-3 p-3 rounded-lg bg-muted/50 border border-border/50"
-                >
-                  {alert.type === "critical" && (
-                    <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-                  )}
-                  {alert.type === "success" && <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />}
-                  {alert.type === "warning" && (
-                    <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-serif text-foreground leading-relaxed">{alert.message}</p>
-                    <p className="text-xs text-muted-foreground font-serif mt-1">{alert.time}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="lg:col-span-3">
+              <DataTable
+                data={filteredTransformers}
+                columns={columns}
+                title="Transformers"
+                description="Manage transformer records and data"
+                actions={
+                  <div className="flex flex-col sm:flex-row gap-4 w-full">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by Transformer No. or Location..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 font-serif focus-ring"
+                      />
+                    </div>
+                    <Select value={regionFilter} onValueChange={setRegionFilter}>
+                      <SelectTrigger className="w-full sm:w-[180px] font-serif focus-ring">
+                        <SelectValue placeholder="Filter by Region" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Regions</SelectItem>
+                        {uniqueRegions.map((region) => (
+                          <SelectItem key={region} value={region}>
+                            {region}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={typeFilter} onValueChange={setTypeFilter}>
+                      <SelectTrigger className="w-full sm:w-[180px] font-serif focus-ring">
+                        <SelectValue placeholder="Filter by Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        {uniqueTypes.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                }
+                emptyMessage="No transformers found matching your search criteria."
+              />
+            </div>
+
+            <Card className="card-hover">
+              <CardHeader>
+                <CardTitle className="font-sans">Recent Alerts</CardTitle>
+                <CardDescription className="font-serif">Latest system notifications</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {recentAlerts.map((alert, index) => (
+                  <div
+                    key={index}
+                    className="flex items-start space-x-3 p-3 rounded-lg bg-muted/50 border border-border/50"
+                  >
+                    {alert.type === "critical" && (
+                      <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
+                    )}
+                    {alert.type === "success" && <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />}
+                    {alert.type === "warning" && (
+                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-serif text-foreground leading-relaxed">{alert.message}</p>
+                      <p className="text-xs text-muted-foreground font-serif mt-1">{alert.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
-    </MainLayout>
+      </MainLayout>
+    </>
   )
 }
