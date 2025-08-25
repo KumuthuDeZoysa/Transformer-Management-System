@@ -135,12 +135,7 @@ export default function GalleryPage() {
             <Button variant="outline" onClick={loadData} className="font-serif bg-transparent">
               <RefreshCw className="mr-2 h-4 w-4" /> Refresh
             </Button>
-            <Link href="/upload">
-              <Button className="bg-primary hover:bg-primary/90 font-serif">
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Image
-              </Button>
-            </Link>
+
           </div>
         </div>
 
