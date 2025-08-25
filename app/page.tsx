@@ -332,18 +332,23 @@ export default function TransformersPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0"
+            className="h-8 w-8 p-0 cursor-pointer hover:bg-accent transition-colors"
             onClick={() => router.push(`/transformer/${transformer.id}`)}
           >
             <Eye className="h-3 w-3" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEdit(transformer)}>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 w-8 p-0 cursor-pointer hover:bg-accent transition-colors" 
+            onClick={() => handleEdit(transformer)}
+          >
             <Edit className="h-3 w-3" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+            className="h-8 w-8 p-0 text-destructive hover:text-destructive cursor-pointer hover:bg-red-50 transition-colors"
             onClick={() => handleDelete(transformer.id)}
           >
             <Trash2 className="h-3 w-3" />

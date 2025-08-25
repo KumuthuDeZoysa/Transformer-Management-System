@@ -2,7 +2,7 @@ export interface Transformer {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Power" | "Bulk"
+  type: "Distribution" | "Bulk"
   capacity: string
   location: string
   status: "Normal" | "Warning" | "Critical"
@@ -54,7 +54,7 @@ const transformersStore: Transformer[] = [
     id: "AZ-7316",
     poleNo: "EN-125-C",
     region: "Colombo",
-    type: "Power",
+    type: "Bulk",
     capacity: "500 kVA",
     location: "Colombo Fort Railway Station",
     status: "Critical",
@@ -78,7 +78,7 @@ const transformersStore: Transformer[] = [
     id: "AX-8993",
     poleNo: "EN-127-E",
     region: "Mount Lavinia",
-    type: "Power",
+    type: "Bulk",
     capacity: "315 kVA",
     location: "Mount Lavinia Hotel Area",
     status: "Normal",

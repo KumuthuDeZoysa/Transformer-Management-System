@@ -202,13 +202,30 @@ export default function InspectionsPage() {
       header: 'Actions',
       render: (_: string, r: Row) => (
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => router.push(`/inspections/${r.id}`)}>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 w-8 p-0 cursor-pointer hover:bg-accent transition-colors" 
+            onClick={() => router.push(`/inspections/${r.id}`)}
+          >
             <Eye className="h-3 w-3" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onEdit(r.id)} title="Edit">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 w-8 p-0 cursor-pointer hover:bg-accent transition-colors" 
+            onClick={() => onEdit(r.id)} 
+            title="Edit"
+          >
             <Edit className="h-3 w-3" />
           </Button>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => onDelete(r.id)} title="Delete">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 w-8 p-0 text-destructive cursor-pointer hover:bg-red-50 transition-colors" 
+            onClick={() => onDelete(r.id)} 
+            title="Delete"
+          >
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
@@ -314,7 +331,7 @@ export default function InspectionsPage() {
             <h1 className="text-3xl font-sans font-bold text-foreground">All Inspections</h1>
             <p className="text-muted-foreground font-serif">Browse and manage inspection records</p>
           </div>
-          <Button className="button-primary" onClick={() => setAddOpen(true)}>
+          <Button className="button-primary cursor-pointer hover:bg-primary/90 transition-colors" onClick={() => setAddOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Add Inspection
           </Button>

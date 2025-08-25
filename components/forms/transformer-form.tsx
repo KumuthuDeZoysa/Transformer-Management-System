@@ -311,12 +311,16 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
               variant="outline"
               onClick={onCancel}
               disabled={isSubmitting}
-              className="font-serif bg-transparent"
+              className="font-serif bg-transparent cursor-pointer hover:bg-accent transition-colors"
             >
               <X className="mr-2 h-4 w-4" />
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting} className="font-serif">
+            <Button 
+              type="submit" 
+              disabled={isSubmitting} 
+              className="font-serif cursor-pointer hover:bg-primary/90 transition-colors"
+            >
               <Save className="mr-2 h-4 w-4" />
               {isSubmitting ? "Saving..." : isEditing ? "Update Transformer" : "Add Transformer"}
             </Button>

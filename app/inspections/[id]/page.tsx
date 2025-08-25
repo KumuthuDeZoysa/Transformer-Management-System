@@ -48,6 +48,7 @@ export default function InspectionDetailPage() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [imageUploads, setImageUploads] = useState<ImageUpload[]>([])
+  const [showReplaceBaselineForm, setShowReplaceBaselineForm] = useState(false)
 
   useEffect(() => {
     const loadInspection = async () => {
@@ -240,6 +241,7 @@ export default function InspectionDetailPage() {
       setEnvironmentalCondition("")
       setSelectedFile(null)
       setUploadProgress(0)
+      setShowReplaceBaselineForm(false)
     } catch (error) {
       console.error('Upload failed:', error)
       alert('Upload failed. Please try again.')
@@ -274,7 +276,7 @@ export default function InspectionDetailPage() {
         {/* Header */}
         <div className="flex items-center space-x-4">
           <Link href="/inspections">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="cursor-pointer hover:bg-accent transition-colors">
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
@@ -363,13 +365,13 @@ export default function InspectionDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {baselineImages.length > 0 ? (
+              {baselineImages.length > 0 && !showReplaceBaselineForm ? (
                 <div className="space-y-4">
                   {/* Display existing baseline image */}
                   <div className="border rounded-lg p-4">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-serif font-medium">Current Baseline</span>
-                      <Button variant="outline" size="sm" onClick={() => window.open(baselineImages[0].url, '_blank')}>
+                      <Button variant="outline" size="sm" className="cursor-pointer hover:bg-accent" onClick={() => window.open(baselineImages[0].url, '_blank')}>
                         <Eye className="h-4 w-4 mr-1" />
                         View
                       </Button>
@@ -377,13 +379,41 @@ export default function InspectionDetailPage() {
                     <p className="text-xs text-muted-foreground font-serif mb-2">
                       Uploaded: {new Date(baselineImages[0].captured_at).toLocaleString()}
                     </p>
-                    <Button variant="destructive" size="sm" className="w-full">
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      className="w-full transition-all duration-300 ease-in-out hover:bg-red-600 hover:scale-105 hover:shadow-lg hover:shadow-red-500/25 active:scale-95 cursor-pointer"
+                      onClick={() => {
+                        setShowReplaceBaselineForm(true)
+                        setImageType("baseline")
+                        setSelectedFile(null)
+                        setUploaderName("")
+                        setComments("")
+                        setEnvironmentalCondition("")
+                      }}
+                    >
                       Replace Baseline Image
                     </Button>
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleImageUpload} className="space-y-4">
+                <div className="space-y-4">
+                  {showReplaceBaselineForm && baselineImages.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <p className="text-sm text-blue-800 font-serif">
+                        You are about to replace the existing baseline image. The old image will be archived.
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-2 cursor-pointer hover:bg-accent"
+                        onClick={() => setShowReplaceBaselineForm(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
+                  <form onSubmit={handleImageUpload} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="weather" className="font-serif">
                       Environmental Condition *
@@ -416,7 +446,8 @@ export default function InspectionDetailPage() {
 
                   <div className="space-y-2">
                     <Label className="font-serif">Baseline Image File *</Label>
-                    <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                    <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer" 
+                         onClick={() => document.getElementById('baseline-file-upload')?.click()}>
                       <ImageIcon className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
                       <div className="space-y-1">
                         {selectedFile && imageType === "baseline" ? (
@@ -456,7 +487,7 @@ export default function InspectionDetailPage() {
 
                   <Button 
                     type="submit" 
-                    className="w-full font-serif" 
+                    className="w-full font-serif cursor-pointer hover:bg-primary/90 transition-colors" 
                     disabled={isUploading || !selectedFile || imageType !== "baseline"}
                   >
                     {isUploading && imageType === "baseline" ? (
@@ -471,7 +502,8 @@ export default function InspectionDetailPage() {
                       </>
                     )}
                   </Button>
-                </form>
+                  </form>
+                </div>
               )}
             </CardContent>
           </Card>

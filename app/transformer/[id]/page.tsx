@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface Transformer {
   id: string
@@ -156,6 +157,7 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
   const router = useRouter()
   const resolvedParams = use(params)
   const [transformer, setTransformer] = useState<Transformer | null>(null)
+  const [loading, setLoading] = useState(true)
   const [images, setImages] = useState<UploadedImage[]>([])
   const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(null)
   const [filterType, setFilterType] = useState("all")
@@ -171,6 +173,7 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
   useEffect(() => {
     let cancelled = false
     const load = async () => {
+      setLoading(true) // Ensure loading is true at start
       try {
         // 1) Load transformer by code or uuid from API
         const res = await fetch(`/api/transformers/${resolvedParams.id}`)
@@ -207,10 +210,13 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
               status: (img.status as 'Normal' | 'Warning' | 'Critical') || 'Normal',
             }))
             if (!cancelled) setImages(mappedImages)
-            return
           }
+          if (!cancelled) setLoading(false)
+          return
         }
-      } catch {}
+      } catch (error) {
+        console.log('API call failed, falling back to mock data')
+      }
 
       // Fallback to mock if DB failed
       if (cancelled) return
@@ -218,6 +224,7 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
       setTransformer(foundTransformer || null)
       const transformerImages = mockImages.filter((img) => img.transformerId === resolvedParams.id)
       setImages(transformerImages)
+      setLoading(false)
     }
     load()
     return () => {
@@ -302,6 +309,22 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
     }
   }
 
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+            <h2 className="text-2xl font-sans font-bold text-foreground mb-2">Loading Transformer Details</h2>
+            <p className="text-muted-foreground font-serif">Please wait while we load the transformer information...</p>
+          </div>
+        </div>
+      </MainLayout>
+    )
+  }
+
   if (!transformer) {
     return (
       <MainLayout>
@@ -309,7 +332,7 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
           <div className="text-center">
             <h2 className="text-2xl font-sans font-bold text-foreground mb-2">Transformer Not Found</h2>
             <p className="text-muted-foreground font-serif mb-4">The requested transformer could not be found.</p>
-            <Button onClick={() => router.push("/")} className="font-serif">
+            <Button onClick={() => router.push("/")} className="font-serif cursor-pointer hover:bg-accent transition-colors">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Transformers
             </Button>
@@ -325,7 +348,7 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => router.push("/")} className="font-serif">
+            <Button variant="ghost" onClick={() => router.push("/")} className="font-serif cursor-pointer hover:bg-accent transition-colors">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
             </Button>
@@ -336,7 +359,7 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
           </div>
           <div className="flex items-center gap-2">
             <Badge className={getStatusColor(transformer.status || "Normal")}>{transformer.status || "Normal"}</Badge>
-            <Button variant="outline" className="font-serif bg-transparent">
+            <Button variant="outline" className="font-serif bg-transparent cursor-pointer hover:bg-accent transition-colors">
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </Button>

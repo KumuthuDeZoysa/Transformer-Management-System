@@ -25,7 +25,7 @@ export function Sidebar() {
       <Button
         variant="ghost"
         size="icon"
-        className="fixed top-4 left-4 z-50 md:hidden bg-sidebar text-sidebar-foreground"
+        className="fixed top-4 left-4 z-50 md:hidden bg-sidebar text-sidebar-foreground cursor-pointer hover:bg-sidebar-accent transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
         {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -58,7 +58,7 @@ export function Sidebar() {
                   key={item.name}
                   href={item.href}
                   className={cn(
-                    "flex items-center px-3 py-2 text-sm font-serif rounded-lg transition-colors",
+                    "flex items-center px-3 py-2 text-sm font-serif rounded-lg transition-colors cursor-pointer",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-sidebar-foreground hover:bg-sidebar-accent/10 hover:text-sidebar-accent-foreground",
