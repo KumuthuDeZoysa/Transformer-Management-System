@@ -60,7 +60,7 @@ export function Sidebar() {
                     "flex items-center px-3 py-2 text-sm font-serif rounded-lg transition-colors cursor-pointer",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/10 hover:text-sidebar-accent-foreground",
+                      : "text-sidebar-foreground hover:bg-sidebar-accent/30 hover:text-sidebar-accent-foreground hover:shadow-sm",
                   )}
                   onClick={() => setIsOpen(false)}
                 >

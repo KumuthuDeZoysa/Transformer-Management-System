@@ -16,7 +16,7 @@ export interface TransformerFormData {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Bulk" | "Power"
+  type: "Distribution" | "Bulk"
   capacity: string
   location: string
 }
@@ -26,7 +26,7 @@ interface Transformer {
   id: string
   poleNo: string
   region: string
-  type: "Distribution" | "Bulk" | "Power"
+  type: "Distribution" | "Bulk"
   capacity: string
   location: string
   status: "Normal" | "Warning" | "Critical"
@@ -54,7 +54,7 @@ const regions = [
   "Kalutara",
 ]
 
-const transformerTypes: ("Distribution" | "Bulk" | "Power")[] = ["Distribution", "Bulk", "Power"]
+const transformerTypes: ("Distribution" | "Bulk")[] = ["Distribution", "Bulk"]
 
 export function TransformerForm({ transformer, onSubmit, onCancel, existingTransformers }: TransformerFormProps) {
   const [formData, setFormData] = useState<TransformerFormData>({
@@ -72,13 +72,26 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
 
   useEffect(() => {
     if (transformer) {
+      // Strip " kVA" suffix from capacity if present for editing
+      const capacityValue = transformer.capacity.replace(/ kVA$/i, '').trim()
+      
       setFormData({
         id: transformer.id,
         poleNo: transformer.poleNo,
         region: transformer.region,
-        type: transformer.type,
-        capacity: transformer.capacity,
+        type: transformer.type as "Distribution" | "Bulk",
+        capacity: capacityValue,
         location: transformer.location,
+      })
+    } else {
+      // Reset form for new transformer
+      setFormData({
+        id: "",
+        poleNo: "",
+        region: "",
+        type: "Distribution",
+        capacity: "",
+        location: "",
       })
     }
   }, [transformer])
@@ -215,7 +228,11 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
               <Label htmlFor="region" className="font-serif">
                 Region/Branch <span className="text-destructive">*</span>
               </Label>
-              <Select value={formData.region} onValueChange={(value) => handleInputChange("region", value)}>
+              <Select 
+                key={`region-${transformer?.id || 'new'}-${formData.region}`}
+                value={formData.region || undefined}
+                onValueChange={(value) => handleInputChange("region", value)}
+              >
                 <SelectTrigger className={`font-serif ${errors.region ? "border-destructive" : ""}`}>
                   <SelectValue placeholder="Select region" />
                 </SelectTrigger>
@@ -241,7 +258,8 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
                 Type <span className="text-destructive">*</span>
               </Label>
               <Select 
-                value={formData.type} 
+                key={`type-${transformer?.id || 'new'}-${formData.type}`}
+                value={formData.type || undefined}
                 onValueChange={(value) => handleInputChange("type", value as "Distribution" | "Bulk")}
               >
                 <SelectTrigger className={`font-serif ${errors.type ? "border-destructive" : ""}`}>

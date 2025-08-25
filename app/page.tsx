@@ -234,7 +234,7 @@ export default function TransformersPage() {
           id: t.code || t.id,
           poleNo: t.pole_no || "",
           region: t.region || "",
-          type: (t.type as any) || "Distribution",
+          type: (t.type as "Distribution" | "Bulk") || "Distribution",
           capacity: t.capacity || "",
           location: t.location || "",
           status: (t.status as any) || "Normal",
@@ -351,7 +351,7 @@ export default function TransformersPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0 text-destructive hover:text-destructive cursor-pointer hover:bg-red-50 transition-colors"
+            className="h-8 w-8 p-0 text-destructive cursor-pointer hover:bg-accent transition-colors"
             onClick={() => handleDelete(transformer.id)}
             title="Delete"
           >
@@ -382,6 +382,7 @@ export default function TransformersPage() {
       <MainLayout>
         <div className="max-w-4xl mx-auto py-6">
           <TransformerForm
+            key={editingTransformer?.id || 'new'}
             transformer={editingTransformer}
             onSubmit={handleFormSubmit}
             onCancel={handleFormCancel}

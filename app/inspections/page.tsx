@@ -225,7 +225,7 @@ export default function InspectionsPage() {
           <Button 
             variant="ghost" 
             size="sm" 
-            className="h-8 w-8 p-0 text-destructive cursor-pointer hover:bg-red-50 transition-colors" 
+            className="h-8 w-8 p-0 text-destructive cursor-pointer hover:bg-accent transition-colors" 
             onClick={() => onDelete(r.id)} 
             title="Delete"
           >
