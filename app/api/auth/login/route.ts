@@ -1,5 +1,7 @@
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/client'
+import { hashPassword } from '@/lib/hash'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,8 +11,8 @@ export async function POST(req: NextRequest) {
   const username = (body.username || '').trim()
   const password = (body.password || '').trim()
   if (!username || !password) return NextResponse.json({ error: 'Username and password required' }, { status: 400 })
-  // For now accept any password for existing username
-  const { data, error } = await supabase.from('users').select('id, username').eq('username', username).maybeSingle()
+  const hashedPassword = hashPassword(password)
+  const { data, error } = await supabase.from('users').select('id, username').eq('username', username).eq('password', hashedPassword).maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
   const token = `${data.id}:${username}`

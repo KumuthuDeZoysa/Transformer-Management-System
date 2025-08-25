@@ -9,10 +9,30 @@ import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { ArrowLeft, Save } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { fetchTransformersFromDb } from "@/lib/db-api"
+import { seedTransformers } from "@/lib/seed-transformers"
 
 export default function SettingsPage() {
-  // DB seeding controls removed per request
+  const [transformers, setTransformers] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [seeded, setSeeded] = useState(false)
+
+  useEffect(() => {
+    fetchTransformersFromDb().then(setTransformers)
+  }, [seeded])
+
+  async function handleSeed() {
+    setLoading(true)
+    try {
+      await seedTransformers()
+      setSeeded(s => !s)
+    } catch (e) {
+      alert("Seeding failed: " + (e as any)?.message)
+    }
+    setLoading(false)
+  }
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -30,6 +50,77 @@ export default function SettingsPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Database Schema & Seed Data for Transformer */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="font-sans">Transformer Database Schema & Seed Data</CardTitle>
+              <CardDescription className="font-serif">Use this schema and sample data to initialize your database for testing.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 flex items-center justify-between">
+                <Label className="font-serif mb-1 block">Current Transformers in Database</Label>
+                <Button size="sm" onClick={handleSeed} disabled={loading}>
+                  {loading ? "Seeding..." : "Seed Data"}
+                </Button>
+              </div>
+              <div className="mb-4 max-h-48 overflow-auto border rounded bg-muted p-2">
+                {transformers.length === 0 ? (
+                  <div className="text-xs text-muted-foreground font-mono">No transformers found.</div>
+                ) : (
+                  <table className="text-xs font-mono w-full">
+                    <thead>
+                      <tr>
+                        <th className="text-left">Code</th>
+                        <th className="text-left">Pole No</th>
+                        <th className="text-left">Region</th>
+                        <th className="text-left">Type</th>
+                        <th className="text-left">Capacity</th>
+                        <th className="text-left">Location</th>
+                        <th className="text-left">Status</th>
+                        <th className="text-left">Last Inspection</th>
+                        <th className="text-left">Created</th>
+                        <th className="text-left">Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transformers.map(t => (
+                        <tr key={t.id}>
+                          <td>{t.code}</td>
+                          <td>{t.pole_no}</td>
+                          <td>{t.region}</td>
+                          <td>{t.type}</td>
+                          <td>{t.capacity}</td>
+                          <td>{t.location}</td>
+                          <td>{t.status}</td>
+                          <td>{t.last_inspection}</td>
+                          <td>{t.created_at}</td>
+                          <td>{t.updated_at}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div className="mb-4">
+                <Label className="font-serif mb-1 block">PostgreSQL Table Schema</Label>
+                <pre className="bg-muted rounded p-3 text-xs overflow-x-auto font-mono">
+{`CREATE TABLE transformers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text NOT NULL UNIQUE,
+  pole_no text,
+  region text,
+  type text,
+  capacity text,
+  location text,
+  status text check (status in ('normal','warning','critical')) default 'normal',
+  last_inspection timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);`}
+                </pre>
+              </div>
+            </CardContent>
+          </Card>
           {/* Database seeding section removed */}
           {/* Temperature Thresholds */}
           <Card>

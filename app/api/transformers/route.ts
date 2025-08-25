@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     type: body.type ?? null,
     capacity: body.capacity ?? null,
     location: body.location ?? null,
-    status: body.status ?? 'Normal',
+    status: (body.status ?? 'Normal'),
     last_inspection: body.lastInspection ?? null,
     updated_at: new Date().toISOString(),
   }
