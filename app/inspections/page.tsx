@@ -25,6 +25,74 @@ type Row = {
   status: 'In Progress' | 'Pending' | 'Completed'
 }
 
+// Demo data for testing - keeping consistent across the component
+const DEMO_INSPECTIONS: Row[] = [
+  {
+    id: 'demo-1',
+    transformerId: 'AZ-8890',
+    inspectionNo: '0013232345',
+    inspectedDate: '8/24/2025, 11:40:00 AM',
+    maintenanceDate: '8/26/2025, 2:30:00 PM',
+    status: 'Completed'
+  },
+  {
+    id: 'demo-2', 
+    transformerId: 'AZ-4613',
+    inspectionNo: '0013232346',
+    inspectedDate: '8/23/2025, 7:14:00 PM',
+    maintenanceDate: '—',
+    status: 'Pending'
+  },
+  {
+    id: 'demo-3',
+    transformerId: 'AZ-4613', 
+    inspectionNo: '0013232341',
+    inspectedDate: '8/23/2025, 11:28:11 AM',
+    maintenanceDate: '—',
+    status: 'In Progress'
+  },
+  {
+    id: 'demo-4',
+    transformerId: 'AZ-8890',
+    inspectionNo: '0013232344',
+    inspectedDate: '8/22/2025, 3:39:00 PM',
+    maintenanceDate: '8/23/2025, 10:15:00 AM',
+    status: 'Completed'
+  },
+  {
+    id: 'demo-5',
+    transformerId: 'AZ-7316',
+    inspectionNo: '0013232343',
+    inspectedDate: '8/21/2025, 11:17:00 AM',
+    maintenanceDate: '—',
+    status: 'Pending'
+  },
+  {
+    id: 'demo-6',
+    transformerId: 'AX-8993',
+    inspectionNo: '0013232342',
+    inspectedDate: '8/20/2025, 10:15:00 AM',
+    maintenanceDate: '8/22/2025, 4:45:00 PM',
+    status: 'Completed'
+  },
+  {
+    id: 'demo-7',
+    transformerId: 'EN-122A',
+    inspectionNo: '0013232340',
+    inspectedDate: '8/19/2025, 9:30:00 AM',
+    maintenanceDate: '8/21/2025, 1:20:00 PM',
+    status: 'Completed'
+  },
+  {
+    id: 'demo-8',
+    transformerId: 'LP-2567',
+    inspectionNo: '0013232339',
+    inspectedDate: '8/18/2025, 2:45:00 PM',
+    maintenanceDate: '—',
+    status: 'In Progress'
+  }
+]
+
 export default function InspectionsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -68,74 +136,7 @@ export default function InspectionsPage() {
         }))
 
         // Add some demo data to show maintenance dates functionality
-        const demoData: Row[] = [
-          {
-            id: 'demo-1',
-            transformerId: 'AZ-8890',
-            inspectionNo: '0013232345',
-            inspectedDate: '8/24/2025, 11:40:00 AM',
-            maintenanceDate: '8/26/2025, 2:30:00 PM',
-            status: 'Completed'
-          },
-          {
-            id: 'demo-2', 
-            transformerId: 'AZ-4613',
-            inspectionNo: '0013232346',
-            inspectedDate: '8/23/2025, 7:14:00 PM',
-            maintenanceDate: '—',
-            status: 'Pending'
-          },
-          {
-            id: 'demo-3',
-            transformerId: 'AZ-4613', 
-            inspectionNo: '0013232341',
-            inspectedDate: '8/23/2025, 11:28:11 AM',
-            maintenanceDate: '—',
-            status: 'In Progress'
-          },
-          {
-            id: 'demo-4',
-            transformerId: 'AZ-8890',
-            inspectionNo: '0013232344',
-            inspectedDate: '8/22/2025, 3:39:00 PM',
-            maintenanceDate: '8/23/2025, 10:15:00 AM',
-            status: 'Completed'
-          },
-          {
-            id: 'demo-5',
-            transformerId: 'AZ-7316',
-            inspectionNo: '0013232343',
-            inspectedDate: '8/21/2025, 11:17:00 AM',
-            maintenanceDate: '—',
-            status: 'Pending'
-          },
-          {
-            id: 'demo-6',
-            transformerId: 'AX-8993',
-            inspectionNo: '0013232342',
-            inspectedDate: '8/20/2025, 10:15:00 AM',
-            maintenanceDate: '8/22/2025, 4:45:00 PM',
-            status: 'Completed'
-          },
-          {
-            id: 'demo-7',
-            transformerId: 'EN-122A',
-            inspectionNo: '0013232340',
-            inspectedDate: '8/19/2025, 9:30:00 AM',
-            maintenanceDate: '8/21/2025, 1:20:00 PM',
-            status: 'Completed'
-          },
-          {
-            id: 'demo-8',
-            transformerId: 'LP-2567',
-            inspectionNo: '0013232339',
-            inspectedDate: '8/18/2025, 2:45:00 PM',
-            maintenanceDate: '—',
-            status: 'In Progress'
-          }
-        ]
-        
-        setRows([...mapped, ...demoData])
+        setRows([...mapped, ...DEMO_INSPECTIONS])
 
         // If a transformer is passed via query, preselect it and open the Add dialog
         const qpId = searchParams.get('transformer_id') || ''
@@ -261,7 +262,10 @@ export default function InspectionsPage() {
       }
       
       if (editingId) {
-        await updateInspection(editingId, payload as any)
+        // Don't try to update demo data in the database
+        if (!editingId.startsWith('demo-')) {
+          await updateInspection(editingId, payload as any)
+        }
       } else {
         await createInspection(payload as any)
       }
@@ -276,7 +280,9 @@ export default function InspectionsPage() {
         maintenanceDate: i.maintenance_date ? new Date(i.maintenance_date).toLocaleString() : '—',
         status: i.status,
       }))
-      setRows(mapped)
+
+      // Add demo data to show maintenance dates functionality (keep consistent with initial load)
+      setRows([...mapped, ...DEMO_INSPECTIONS])
       setAddOpen(false)
       setEditingId(null)
       resetForm()
@@ -287,24 +293,64 @@ export default function InspectionsPage() {
     }
   }
 
-  const onEdit = (id: string) => {
-    const row = rows.find((r) => r.id === id)
-    if (!row) return
-    const transformer = transformers.find((t) => (t.code || t.id) === row.transformerId || t.id === row.transformerId)
-    
-    // Parse the date and time from inspectedDate
-    const inspectedDate = new Date(row.inspectedDate)
-    const dateStr = inspectedDate.toISOString().split('T')[0] // YYYY-MM-DD
-    const timeStr = inspectedDate.toTimeString().split(' ')[0].slice(0, 5) // HH:MM
-    
-    setForm({
-      transformer_id: transformer?.id || '',
-      inspected_date: dateStr,
-      inspected_time: timeStr,
-      branch: transformer?.region || '', // Use transformer region as branch
-    })
-    setEditingId(id)
-    setAddOpen(true)
+  const onEdit = async (id: string) => {
+    try {
+      // Handle demo data differently since it's not in the database
+      if (id.startsWith('demo-')) {
+        const row = rows.find((r) => r.id === id)
+        if (!row) return
+        
+        const transformer = transformers.find((t) => (t.code || t.id) === row.transformerId || t.id === row.transformerId)
+        
+        // Parse the date and time from inspectedDate
+        const inspectedDate = new Date(row.inspectedDate)
+        const dateStr = inspectedDate.toISOString().split('T')[0] // YYYY-MM-DD
+        const timeStr = inspectedDate.toTimeString().split(' ')[0].slice(0, 5) // HH:MM
+        
+        setForm({
+          transformer_id: transformer?.id || '',
+          inspected_date: dateStr,
+          inspected_time: timeStr,
+          branch: transformer?.region || '', // Use transformer region as branch
+        })
+        setEditingId(id)
+        setAddOpen(true)
+        return
+      }
+
+      // Fetch fresh inspection data from database for real inspections
+      const inspections = await fetchInspections()
+      const inspection = inspections.find((i) => i.id === id)
+      
+      if (!inspection) {
+        alert('Inspection not found')
+        return
+      }
+
+      const transformer = transformers.find((t) => t.id === inspection.transformer_id)
+      
+      // Parse the date and time from the actual database timestamp
+      const inspectedDate = new Date(inspection.inspected_at)
+      const dateStr = inspectedDate.toISOString().split('T')[0] // YYYY-MM-DD
+      const timeStr = inspectedDate.toTimeString().split(' ')[0].slice(0, 5) // HH:MM
+      
+      // Extract branch from notes if stored there
+      const branch = inspection.notes && inspection.notes.startsWith('Branch: ') 
+        ? inspection.notes.replace('Branch: ', '') 
+        : (transformer?.region || '')
+      
+      setForm({
+        transformer_id: inspection.transformer_id,
+        inspected_date: dateStr,
+        inspected_time: timeStr,
+        branch: branch,
+      })
+      setEditingId(id)
+      setAddOpen(true)
+    } catch (error) {
+      console.error('Failed to fetch inspection data for editing:', error)
+      alert('Failed to load inspection data for editing')
+    }
   }
 
   const onDelete = (id: string) => {
@@ -315,7 +361,11 @@ export default function InspectionsPage() {
   const confirmDelete = async () => {
     if (!deleteTargetId) return
     try {
-      await deleteInspection(deleteTargetId)
+      // Don't try to delete demo data from the database
+      if (!deleteTargetId.startsWith('demo-')) {
+        await deleteInspection(deleteTargetId)
+      }
+      
       const latest = await fetchInspections()
       const mapped: Row[] = latest.map((i) => ({
         id: i.id,
@@ -325,7 +375,14 @@ export default function InspectionsPage() {
         maintenanceDate: i.maintenance_date ? new Date(i.maintenance_date).toLocaleString() : '—',
         status: i.status,
       }))
-      setRows(mapped)
+
+      // Add demo data (keep consistent with initial load)
+      // Filter out the deleted demo data item if it was a demo item
+      const filteredDemoData = deleteTargetId.startsWith('demo-') 
+        ? DEMO_INSPECTIONS.filter(d => d.id !== deleteTargetId)
+        : DEMO_INSPECTIONS
+      
+      setRows([...mapped, ...filteredDemoData])
     } catch (e: any) {
       alert(e.message || 'Delete failed')
     } finally {
@@ -398,7 +455,7 @@ export default function InspectionsPage() {
             emptyMessage={loading ? 'Loading…' : 'No inspections found.'}
           />
 
-          <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) resetForm() }}>
+          <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) { resetForm(); setEditingId(null); } }}>
             <DialogContent className="max-w-xl">
               <DialogHeader>
                 <DialogTitle className="font-sans">{editingId ? 'Edit Inspection' : 'Add Inspection'}</DialogTitle>
@@ -406,14 +463,18 @@ export default function InspectionsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <div className="md:col-span-2">
                   <label className="text-sm text-muted-foreground font-serif">Transformer No.</label>
-                  <Select value={form.transformer_id} onValueChange={(v) => {
-                    const transformer = transformers.find(t => t.id === v)
-                    setForm((f) => ({ 
-                      ...f, 
-                      transformer_id: v,
-                      branch: transformer?.region || '' // Auto-fill branch from transformer region
-                    }))
-                  }}>
+                  <Select 
+                    value={form.transformer_id} 
+                    onValueChange={(v) => {
+                      const transformer = transformers.find(t => t.id === v)
+                      setForm((f) => ({ 
+                        ...f, 
+                        transformer_id: v,
+                        branch: transformer?.region || '' // Auto-fill branch from transformer region
+                      }))
+                    }}
+                    disabled={!!editingId} // Disable transformer selection when editing
+                  >
                     <SelectTrigger className="font-serif mt-1">
                       <SelectValue placeholder="Select transformer" />
                     </SelectTrigger>
@@ -423,6 +484,11 @@ export default function InspectionsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {editingId && (
+                    <p className="text-xs text-muted-foreground font-serif mt-1">
+                      Transformer cannot be changed when editing an existing inspection
+                    </p>
+                  )}
                 </div>
 
                 <div>
