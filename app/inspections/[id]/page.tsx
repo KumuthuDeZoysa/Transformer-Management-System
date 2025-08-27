@@ -178,22 +178,19 @@ export default function InspectionDetailPage() {
       form.append('transformer_id', inspection?.transformer_id || '')
       
       // Create structured label with all metadata
-      let structuredLabel = `${selectedFile.name} [${imageType}]`
-      
+      let structuredLabel = `${selectedFile.name} [${imageType}]`;
       // Add environmental condition for both baseline and maintenance
-      structuredLabel += ` [env:${environmentalCondition}]`
-      
+      structuredLabel += ` [env:${environmentalCondition}]`;
       if (comments) {
-        structuredLabel += ` [comments:${comments}]`
+        structuredLabel += ` [comments:${comments}]`;
       }
-      
       if (imageType === "maintenance") {
-        structuredLabel += ` [inspection:${inspection?.inspection_no || inspectionId}]`
+        structuredLabel += ` [inspection:${inspection?.inspection_no || inspectionId}]`;
       }
-      
-      structuredLabel += ` by ${uploaderName}`
-      
-      form.append('label', structuredLabel)
+      if (uploaderName && uploaderName.trim() !== "") {
+        structuredLabel += ` by ${uploaderName.trim()}`;
+      }
+      form.append('label', structuredLabel);
 
       const resp = await fetch('/api/upload-image', {
         method: 'POST',
@@ -632,19 +629,22 @@ export default function InspectionDetailPage() {
                   <h4 className="font-sans font-semibold mb-3 text-sm">Uploaded Images</h4>
                   <div className="space-y-2">
                     {maintenanceImages.map((image) => {
-                      const labelParts = image.label.split('[')
-                      const fileName = labelParts[0]?.trim() || image.label
-                      const uploaderMatch = image.label.match(/by (.+)$/)
-                      const envMatch = image.label.match(/\[env:([^\]]+)\]/)
-                      const uploader = uploaderMatch ? uploaderMatch[1] : 'Unknown'
-                      const environment = envMatch ? envMatch[1] : 'Unknown'
-                      
+                      const labelParts = image.label.split('[');
+                      const fileName = labelParts[0]?.trim() || image.label;
+                      const envMatch = image.label.match(/\[env:([^\]]+)\]/);
+                      const environment = envMatch ? envMatch[1] : 'Unknown';
+                      // Extract image type (maintenance or baseline)
+                      let imageType = null;
+                      const typeMatch = image.label.match(/\[(baseline|maintenance)\]/);
+                      if (typeMatch && typeMatch[1]) {
+                        imageType = typeMatch[1];
+                      }
                       return (
                         <div key={image.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
                           <div className="flex-1">
                             <p className="text-sm font-serif font-medium">{fileName}</p>
                             <p className="text-xs text-muted-foreground font-serif">
-                              maintenance • {environment} • {uploader} • {new Date(image.captured_at).toLocaleString()}
+                              {imageType ? `${imageType} • ` : ''}{environment} • {new Date(image.captured_at).toLocaleString()}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -654,7 +654,7 @@ export default function InspectionDetailPage() {
                             <CheckCircle className="h-4 w-4 text-green-600" />
                           </div>
                         </div>
-                      )
+                      );
                     })}
                   </div>
                 </div>
@@ -735,22 +735,13 @@ export default function InspectionDetailPage() {
                     {(() => {
                       const envMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[env:([^\]]+)\]/)
                       const commentsMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[comments:([^\]]+)\]/)
-                      // Extract uploader name, but ignore if it's just '[maintenance]' or contains 'Unknown'
-                      let uploader = null;
-                      const uploaderMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/by ([^\[]+)/);
-                      if (uploaderMatch && uploaderMatch[1]) {
-                        const cleaned = uploaderMatch[1].replace(/\[.*\]/g, '').trim();
-                        if (cleaned && cleaned.toLowerCase() !== 'unknown') {
-                          uploader = cleaned;
-                        }
-                      }
                       // Extract image type (maintenance or baseline)
                       let imageType = null;
                       const typeMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[(baseline|maintenance)\]/);
                       if (typeMatch && typeMatch[1]) {
                         imageType = typeMatch[1];
                       }
-                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions • ${imageType ? imageType.charAt(0).toUpperCase() + imageType.slice(1) : 'Unknown type'} • Inspection #${inspection?.inspection_no}${uploader ? ` • ${uploader}` : ''}${commentsMatch ? ` • ${commentsMatch[1]}` : ''}`;
+                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions • ${imageType ? imageType.charAt(0).toUpperCase() + imageType.slice(1) : 'Unknown type'} • Inspection #${inspection?.inspection_no}${commentsMatch ? ` • ${commentsMatch[1]}` : ''}`;
                     })()}
                   </div>
                 </div>
