@@ -698,8 +698,16 @@ export default function InspectionDetailPage() {
                   <div className="text-xs text-muted-foreground font-serif">
                     {(() => {
                       const envMatch = baselineImages[0].label.match(/\[env:([^\]]+)\]/)
-                      const uploaderMatch = baselineImages[0].label.match(/by (.+)$/)
-                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions • ${uploaderMatch ? uploaderMatch[1] : 'Unknown uploader'}`
+                      // Extract uploader name, but ignore if it's just '[maintenance]' or contains 'Unknown'
+                      let uploader = null;
+                      const uploaderMatch = baselineImages[0].label.match(/by ([^\[]+)/);
+                      if (uploaderMatch && uploaderMatch[1]) {
+                        const cleaned = uploaderMatch[1].replace(/\[.*\]/g, '').trim();
+                        if (cleaned && cleaned.toLowerCase() !== 'unknown') {
+                          uploader = cleaned;
+                        }
+                      }
+                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions${uploader ? ` • ${uploader}` : ''}`;
                     })()}
                   </div>
                 </div>
@@ -725,10 +733,24 @@ export default function InspectionDetailPage() {
                   </div>
                   <div className="text-xs text-muted-foreground font-serif">
                     {(() => {
-                      const uploaderMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/by (.+)$/)
                       const envMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[env:([^\]]+)\]/)
                       const commentsMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[comments:([^\]]+)\]/)
-                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions • Inspection #${inspection?.inspection_no} • ${uploaderMatch ? uploaderMatch[1] : 'Unknown uploader'}${commentsMatch ? ` • ${commentsMatch[1]}` : ''}`
+                      // Extract uploader name, but ignore if it's just '[maintenance]' or contains 'Unknown'
+                      let uploader = null;
+                      const uploaderMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/by ([^\[]+)/);
+                      if (uploaderMatch && uploaderMatch[1]) {
+                        const cleaned = uploaderMatch[1].replace(/\[.*\]/g, '').trim();
+                        if (cleaned && cleaned.toLowerCase() !== 'unknown') {
+                          uploader = cleaned;
+                        }
+                      }
+                      // Extract image type (maintenance or baseline)
+                      let imageType = null;
+                      const typeMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[(baseline|maintenance)\]/);
+                      if (typeMatch && typeMatch[1]) {
+                        imageType = typeMatch[1];
+                      }
+                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions • ${imageType ? imageType.charAt(0).toUpperCase() + imageType.slice(1) : 'Unknown type'} • Inspection #${inspection?.inspection_no}${uploader ? ` • ${uploader}` : ''}${commentsMatch ? ` • ${commentsMatch[1]}` : ''}`;
                     })()}
                   </div>
                 </div>
