@@ -1,8 +1,8 @@
 {
   "transformers": [
     {
-      "code": "TX001",
-      "pole_no": "P-100",
+      "code": "AR-2040",
+      "pole_no": "ER-195-A",
       "region": "Colombo",
       "type": "Distribution",
       "capacity": "100kVA",
@@ -17,8 +17,8 @@
       ]
     },
     {
-      "code": "TX002",
-      "pole_no": "P-101",
+      "code": "AJ-9050",
+      "pole_no": "EN-345-B",
       "region": "Galle",
       "type": "Distribution",
       "capacity": "150kVA",
@@ -33,8 +33,8 @@
       ]
     },
     {
-      "code": "TX003",
-      "pole_no": "P-102",
+      "code": "AF-8050",
+      "pole_no": "EN-655-N",
       "region": "Kandy",
       "type": "Power",
       "capacity": "200kVA",
@@ -49,8 +49,8 @@
       ]
     },
     {
-      "code": "TX004",
-      "pole_no": "P-103",
+      "code": "AL-2250",
+      "pole_no": "EN-235-A",
       "region": "Matara",
       "type": "Distribution",
       "capacity": "160kVA",
@@ -65,8 +65,8 @@
       ]
     },
     {
-      "code": "TX005",
-      "pole_no": "P-104",
+      "code": "AP-1403",
+      "pole_no": "EK-131-N",
       "region": "Jaffna",
       "type": "Distribution",
       "capacity": "120kVA",
