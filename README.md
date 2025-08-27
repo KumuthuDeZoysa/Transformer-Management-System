@@ -162,6 +162,25 @@ SERVER_PORT=8080
 SERVER_SERVLET_CONTEXT_PATH=/api
 ```
 
+## Test Data (How to load)
+
+1) Configure `.env.local`:
+   ```
+   SUPABASE_URL=...
+   SUPABASE_SERVICE_ROLE_KEY=...
+   CLOUDINARY_CLOUD_NAME=...
+   CLOUDINARY_API_KEY=...
+   CLOUDINARY_API_SECRET=...
+
+2) Install dependencies for the seeder:
+   ```
+   npm i @supabase/supabase-js cloudinary
+
+3) Run the seeder:
+
+   ```
+   node scripts/seed.mjs
+
 
 ## Screenshots
 
