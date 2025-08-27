@@ -1,6 +1,6 @@
 # Transformer Management System
 
-A full-stack application for managing electrical transformers, inspections, and thermal images. The project includes a modern Next.js front end (with API routes for CRUD and uploads) and a Java Spring Boot back end exposing REST endpoints. PostgreSQL (via Supabase) is used as the primary data store, and Cloudinary provides image hosting.
+A full-stack application for managing electrical transformers, inspections, and thermal images. The project includes a modern Next.js front end and a Java Spring Boot back end exposing REST endpoints. PostgreSQL (via Supabase) is used as the primary data store, and Cloudinary provides image hosting.
 
 ## Contents
 
@@ -11,18 +11,18 @@ A full-stack application for managing electrical transformers, inspections, and 
 - Setup and running locally
 - Environment variables
 - Database and seeding
-- API endpoints (Front end and Back end)
+- API endpoints
 - Known limitations and issues
 - Roadmap ideas
 
 ## Overview
 
-This application supports day‑to‑day transformer management: create and update transformer records, record inspections, upload and browse thermal images, and review a dashboard with status and alerts. The UI is built with Next.js App Router, Tailwind CSS, and a component system based on Radix UI.
+This application supports day‑to‑day transformer management: create and update transformer records, record inspections, upload and browse thermal images, and review a dashboard with status and alerts. The UI is built with Next.js, Tailwind CSS, and a component system based on Radix UI.
 
 ## Architecture
 
 - Front end
-  - Next.js 15 (App Router), React 18, TypeScript
+  - Next.js 15, React 18, TypeScript
   - Tailwind CSS 4, shadcn/ui + Radix primitives
 
 - Back end
@@ -106,6 +106,13 @@ This application supports day‑to‑day transformer management: create and upda
 ├─ scripts/                    # Seeding scripts for Supabase
 ├─ styles/                     # Global CSS
 └─ package.json                # Front-end scripts
+```
+
+## Cloning the repository
+
+```powershell
+git clone https://github.com/KumuthuDeZoysa/Transformer-Management-System.git
+cd Transformer-Management-System
 ```
 
 ## Setup and running locally
