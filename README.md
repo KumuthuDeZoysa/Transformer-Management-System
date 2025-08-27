@@ -59,10 +59,23 @@ This application supports day‑to‑day transformer management: create and upda
 - Images
   - Cloudinary-powered image upload (multipart/form-data)
   - Image gallery with filters, search, preview modal, and download
+  - Images tagged with type (baseline/maintenance) and environmental conditions (sunny, cloudy, rainy)
+  - Metadata captured: Upload date/time, type, and uploader.
 
 - Settings panel
   - Displays Transformer database schema and shows current rows
   - One-click seed for sample transformers from the UI
+
+ 
+## Additional features
+
+- SHA‑256–hashed login and signup flow (Next.js API routes + Supabase)
+- Cloudinary integration for image uploads (multipart/form-data)
+- PostgreSQL (Supabase) persistence
+- Transformer filtering by region/type and global search bar
+- Image gallery of uploaded images
+- Transformer Database Schema & Seed Data overview in the settings panel
+
 
 ## Project structure
 
@@ -115,7 +128,7 @@ npm install
 npm run dev
 ```
 
-This starts the Next.js app at http://localhost:3000.
+App runs at: http://localhost:3000
 
 Back end (Spring Boot)
 1) Configure database connection. Prefer environment variables for production; for local dev, you can update backend/src/main/resources/application.properties or set the corresponding env vars.
@@ -142,23 +155,6 @@ SERVER_PORT=8080
 SERVER_SERVLET_CONTEXT_PATH=/api
 ```
 
-## Features
-
-- Dashboard with key stats and recent alerts
-- Transformer directory with create, edit, delete, filter, and search
-- Inspection management with statuses (In Progress, Pending, Completed)
-- Thermal image uploads and gallery with filtering, previews, and download
-- Settings panel with schema visibility and seed helpers
-- Responsive UI built with Next.js App Router, Tailwind CSS, shadcn/ui, and Radix
-
-## Additional features
-
-- SHA‑256–hashed login and signup flow (Next.js API routes + Supabase)
-- Cloudinary integration for image uploads (multipart/form-data)
-- PostgreSQL (Supabase) persistence
-- Transformer filtering by region/type and global search bar
-- Image gallery of uploaded images
-- Transformer Database Schema & Seed Data overview in the settings panel
 
 ## Screenshots
 
@@ -212,14 +208,17 @@ CREATE TABLE transformers (
 );
 ```
 
-Related tables expected by the Next.js API routes and scripts:
+Related tables:
 
 - images: id uuid primary key, transformer_id (uuid references transformers), url text, label text, captured_at timestamptz, created_at timestamptz
 - inspections: id uuid primary key, transformer_id (uuid references transformers), inspection_no text, inspected_at timestamptz, maintenance_date timestamptz, status text, notes text, created_at timestamptz, updated_at timestamptz
 - users: id, username unique, password (sha256 hex), role text
 
-- The seed.mjs script expects the schema/tables to exist. If you have not created them, create tables in Supabase SQL Editor, then re-run the scripts.
-- The settings panel includes a **Seed Data** button to insert a handful of transformer rows for quick demos.
+**Seed data:**
+
+- Provided via scripts and one-click seeding in the settings panel
+- Includes at least 5 sample transformers with baseline images
+
 
 ## API endpoints
 
