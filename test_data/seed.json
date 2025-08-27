@@ -1,0 +1,84 @@
+{
+  "transformers": [
+    {
+      "code": "TX001",
+      "pole_no": "P-100",
+      "region": "Colombo",
+      "type": "Distribution",
+      "capacity": "100kVA",
+      "location": "Station Rd",
+      "status": "Normal",
+      "images": [
+        {
+          "file": "tx001_baseline_sunny.jpg",
+          "label": "baseline:sunny",
+          "captured_at": "2025-06-01T09:30:00Z"
+        }
+      ]
+    },
+    {
+      "code": "TX002",
+      "pole_no": "P-101",
+      "region": "Galle",
+      "type": "Distribution",
+      "capacity": "150kVA",
+      "location": "Beach Rd",
+      "status": "Warning",
+      "images": [
+        {
+          "file": "tx002_baseline_cloudy.jpg",
+          "label": "baseline:cloudy",
+          "captured_at": "2025-06-02T10:00:00Z"
+        }
+      ]
+    },
+    {
+      "code": "TX003",
+      "pole_no": "P-102",
+      "region": "Kandy",
+      "type": "Power",
+      "capacity": "200kVA",
+      "location": "Temple Rd",
+      "status": "Critical",
+      "images": [
+        {
+          "file": "tx003_baseline_rainy.jpg",
+          "label": "baseline:rainy",
+          "captured_at": "2025-06-03T14:10:00Z"
+        }
+      ]
+    },
+    {
+      "code": "TX004",
+      "pole_no": "P-103",
+      "region": "Matara",
+      "type": "Distribution",
+      "capacity": "160kVA",
+      "location": "Main St",
+      "status": "Normal",
+      "images": [
+        {
+          "file": "tx004_baseline_sunny.jpg",
+          "label": "baseline:sunny",
+          "captured_at": "2025-06-04T08:45:00Z"
+        }
+      ]
+    },
+    {
+      "code": "TX005",
+      "pole_no": "P-104",
+      "region": "Jaffna",
+      "type": "Distribution",
+      "capacity": "120kVA",
+      "location": "Market Rd",
+      "status": "Normal",
+      "images": [
+        {
+          "file": "tx005_baseline_cloudy.jpg",
+          "label": "baseline:cloudy",
+          "captured_at": "2025-06-05T11:20:00Z"
+        }
+      ]
+    }
+  ]
+}

@@ -7,9 +7,9 @@
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
-  "seed": "dotenv -e .env.local -- node scripts/seed.mjs",
-  "seed:mock": "dotenv -e .env.local -- node scripts/seed-mock.mjs",
-  "seed:inspections": "dotenv -e .env.local -- node scripts/seed-inspections.mjs"
+    "seed": "dotenv -e .env.local -- node scripts/seed.mjs",
+    "seed:mock": "dotenv -e .env.local -- node scripts/seed-mock.mjs",
+    "seed:inspections": "dotenv -e .env.local -- node scripts/seed-inspections.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
