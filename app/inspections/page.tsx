@@ -8,8 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/ui/data-table'
-import { fetchInspections, createInspection, updateInspection, deleteInspection, type DbInspection } from '@/lib/inspections-api'
-import { fetchTransformersFromDb, type DbTransformer } from '@/lib/db-api'
+import backendApi, { type BackendInspection, type BackendTransformer } from '@/lib/backend-api'
+
+// Type aliases for compatibility
+type DbInspection = BackendInspection
+type DbTransformer = BackendTransformer
 import { Eye, Search, Plus, Edit, Trash2 } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -118,8 +121,8 @@ export default function InspectionsPage() {
     const load = async () => {
       try {
         const [ins, transformers] = await Promise.all([
-          fetchInspections(),
-          fetchTransformersFromDb(),
+          backendApi.inspections.getAll(),
+          backendApi.transformers.getAll(),
         ])
         const tMap = new Map<string, DbTransformer>()
         transformers.forEach((t) => tMap.set(t.id, t))
@@ -128,10 +131,10 @@ export default function InspectionsPage() {
         
         const mapped: Row[] = ins.map((i) => ({
           id: i.id,
-          transformerId: tMap.get(i.transformer_id)?.code || i.transformer_id,
-          inspectionNo: i.inspection_no || '—',
-          inspectedDate: new Date(i.inspected_at).toLocaleString(),
-          maintenanceDate: i.maintenance_date ? new Date(i.maintenance_date).toLocaleString() : '—',
+          transformerId: i.transformer?.id ? (tMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
+          inspectionNo: i.inspectionNo || '—',
+          inspectedDate: new Date(i.inspectedAt).toLocaleString(),
+          maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString() : '—',
           status: i.status,
         }))
 
@@ -255,29 +258,29 @@ export default function InspectionsPage() {
       const inspectedAt = new Date(`${form.inspected_date}T${form.inspected_time}`).toISOString()
       
       const payload = {
-        transformer_id: form.transformer_id,
-        inspected_at: inspectedAt,
+        transformerId: form.transformer_id,
+        inspectedAt: inspectedAt,
         status: 'Pending' as DbInspection['status'], // Default status for new inspections
-        notes: form.branch ? `Branch: ${form.branch}` : null, // Store branch info in notes
+        notes: form.branch ? `Branch: ${form.branch}` : undefined, // Store branch info in notes
       }
       
       if (editingId) {
         // Don't try to update demo data in the database
         if (!editingId.startsWith('demo-')) {
-          await updateInspection(editingId, payload as any)
+          await backendApi.inspections.update(editingId, payload as any)
         }
       } else {
-        await createInspection(payload as any)
+        await backendApi.inspections.create(payload as any)
       }
       
       // refresh list
-      const latest = await fetchInspections()
+      const latest = await backendApi.inspections.getAll()
       const mapped: Row[] = latest.map((i) => ({
         id: i.id,
-        transformerId: transformerMap.get(i.transformer_id)?.code || i.transformer_id,
-        inspectionNo: i.inspection_no || '—',
-        inspectedDate: new Date(i.inspected_at).toLocaleString(),
-        maintenanceDate: i.maintenance_date ? new Date(i.maintenance_date).toLocaleString() : '—',
+        transformerId: i.transformer?.id ? (transformerMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
+        inspectionNo: i.inspectionNo || '—',
+        inspectedDate: new Date(i.inspectedAt).toLocaleString(),
+        maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString() : '—',
         status: i.status,
       }))
 
@@ -318,8 +321,8 @@ export default function InspectionsPage() {
         return
       }
 
-      // Fetch fresh inspection data from database for real inspections
-      const inspections = await fetchInspections()
+      // Fetch fresh inspection data from backend for real inspections
+      const inspections = await backendApi.inspections.getAll()
       const inspection = inspections.find((i) => i.id === id)
       
       if (!inspection) {
@@ -327,10 +330,10 @@ export default function InspectionsPage() {
         return
       }
 
-      const transformer = transformers.find((t) => t.id === inspection.transformer_id)
+      const transformer = transformers.find((t) => t.id === inspection.transformer?.id)
       
       // Parse the date and time from the actual database timestamp
-      const inspectedDate = new Date(inspection.inspected_at)
+      const inspectedDate = new Date(inspection.inspectedAt)
       const dateStr = inspectedDate.toISOString().split('T')[0] // YYYY-MM-DD
       const timeStr = inspectedDate.toTimeString().split(' ')[0].slice(0, 5) // HH:MM
       
@@ -340,7 +343,7 @@ export default function InspectionsPage() {
         : (transformer?.region || '')
       
       setForm({
-        transformer_id: inspection.transformer_id,
+        transformer_id: inspection.transformer?.id || '',
         inspected_date: dateStr,
         inspected_time: timeStr,
         branch: branch,
@@ -363,16 +366,16 @@ export default function InspectionsPage() {
     try {
       // Don't try to delete demo data from the database
       if (!deleteTargetId.startsWith('demo-')) {
-        await deleteInspection(deleteTargetId)
+        await backendApi.inspections.delete(deleteTargetId)
       }
       
-      const latest = await fetchInspections()
+      const latest = await backendApi.inspections.getAll()
       const mapped: Row[] = latest.map((i) => ({
         id: i.id,
-        transformerId: transformerMap.get(i.transformer_id)?.code || i.transformer_id,
-        inspectionNo: i.inspection_no || '—',
-        inspectedDate: new Date(i.inspected_at).toLocaleString(),
-        maintenanceDate: i.maintenance_date ? new Date(i.maintenance_date).toLocaleString() : '—',
+        transformerId: i.transformer?.id ? (transformerMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
+        inspectionNo: i.inspectionNo || '—',
+        inspectedDate: new Date(i.inspectedAt).toLocaleString(),
+        maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString() : '—',
         status: i.status,
       }))
 

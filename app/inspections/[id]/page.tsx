@@ -13,7 +13,8 @@ import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Upload, ImageIcon, CheckCircle, Clock, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { fetchInspections, updateInspection, type DbInspection } from '@/lib/inspections-api'
-import { fetchTransformersFromDb, type DbTransformer } from '@/lib/db-api'
+import backendApi, { type BackendTransformer, type BackendInspection } from '@/lib/backend-api'
+import { transformerApi } from '@/lib/mock-api'
 
 interface ImageUpload {
   id: string
@@ -34,10 +35,11 @@ export default function InspectionDetailPage() {
 
   // Inspection data
   const [inspection, setInspection] = useState<DbInspection | null>(null)
-  const [transformer, setTransformer] = useState<DbTransformer | null>(null)
+  const [transformer, setTransformer] = useState<BackendTransformer | null>(null)
   const [baselineImages, setBaselineImages] = useState<any[]>([])
   const [maintenanceImages, setMaintenanceImages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [backendConnected, setBackendConnected] = useState(false)
   
   // Image upload states
   const [imageType, setImageType] = useState<"baseline" | "maintenance" | "">("")
@@ -54,21 +56,68 @@ export default function InspectionDetailPage() {
     const loadInspection = async () => {
       try {
         setLoading(true)
-        const [inspections, transformers] = await Promise.all([
+        
+        // Check if backend is available
+        const healthCheck = await backendApi.health.checkBackendStatus()
+        setBackendConnected(healthCheck.status === 'healthy')
+
+        // For now, we'll continue using the existing inspections API until it's updated
+        // This is because the inspections API is more complex and would need significant changes
+        const [inspections] = await Promise.all([
           fetchInspections(),
-          fetchTransformersFromDb(),
         ])
         
-        const currentInspection = inspections.find(i => i.id === inspectionId)
+        const currentInspection = inspections.find((i: any) => i.id === inspectionId)
         if (!currentInspection) {
           router.push('/inspections')
           return
         }
         
-        const relatedTransformer = transformers.find(t => t.id === currentInspection.transformer_id)
-        
         setInspection(currentInspection)
-        setTransformer(relatedTransformer || null)
+        
+        // Get transformer data using backend API if available
+        if (healthCheck.status === 'healthy') {
+          try {
+            console.log('🚀 Loading transformer from Spring Boot backend...')
+            const backendTransformers = await backendApi.transformers.getAll()
+            const relatedTransformer = backendTransformers.find((t: BackendTransformer) => 
+              t.id === currentInspection.transformer_id || t.code === currentInspection.transformer_id
+            )
+            if (relatedTransformer) {
+              setTransformer(relatedTransformer)
+            }
+          } catch (error) {
+            console.error('Failed to load transformer from backend:', error)
+          }
+        }
+        
+        // If no transformer found from backend, try mock data
+        if (!transformer && !backendConnected) {
+          console.log('📡 Loading transformer from mock data...')
+          try {
+            const mockTransformers = await transformerApi.getAll()
+            const relatedTransformer = mockTransformers.find((t: any) => t.id === currentInspection.transformer_id)
+            if (relatedTransformer) {
+              // Convert mock transformer to backend format for consistency
+              const converted: BackendTransformer = {
+                id: relatedTransformer.id,
+                code: relatedTransformer.id,
+                poleNo: relatedTransformer.poleNo,
+                region: relatedTransformer.region,
+                type: relatedTransformer.type,
+                capacity: relatedTransformer.capacity,
+                location: relatedTransformer.location,
+                status: relatedTransformer.status,
+                lastInspection: relatedTransformer.lastInspection,
+                createdAt: relatedTransformer.createdAt,
+                updatedAt: relatedTransformer.updatedAt,
+              }
+              setTransformer(converted)
+            }
+          } catch (error) {
+            console.error('Failed to load transformer from mock data:', error)
+          }
+        }
 
         // Load existing images for this transformer and inspection
         try {
@@ -325,7 +374,7 @@ export default function InspectionDetailPage() {
           <Card>
             <CardContent className="p-4 text-center">
               <div className="text-sm text-muted-foreground font-serif">Pole No.</div>
-              <div className="text-lg font-sans font-semibold">{transformer.pole_no || 'N/A'}</div>
+              <div className="text-lg font-sans font-semibold">{transformer.poleNo || 'N/A'}</div>
             </CardContent>
           </Card>
           <Card>

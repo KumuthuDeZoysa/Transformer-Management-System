@@ -11,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/transformers")
+@RequestMapping("/transformers")
 public class TransformerController {
 
     @Autowired
@@ -19,12 +19,34 @@ public class TransformerController {
 
     @GetMapping
     public List<Transformer> getAllTransformers() {
-        return transformerRepository.findAll();
+        System.out.println("🔍 TransformerController.getAllTransformers() called");
+        List<Transformer> transformers = transformerRepository.findAll();
+        System.out.println("📊 Found " + transformers.size() + " transformers");
+        return transformers;
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<String> health() {
+        return ResponseEntity.ok("Transformer API is working!");
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Transformer> getTransformerById(@PathVariable UUID id) {
-        Optional<Transformer> transformer = transformerRepository.findById(id);
+    public ResponseEntity<Transformer> getTransformerById(@PathVariable String id) {
+        System.out.println("🔍 Getting transformer with ID: " + id);
+        
+        Optional<Transformer> transformer;
+        
+        // Try to parse as UUID first
+        try {
+            UUID uuid = UUID.fromString(id);
+            transformer = transformerRepository.findById(uuid);
+            System.out.println("🔍 Found transformer by UUID: " + transformer.isPresent());
+        } catch (IllegalArgumentException e) {
+            // If not a valid UUID, try to find by code
+            transformer = transformerRepository.findByCode(id);
+            System.out.println("🔍 Found transformer by code: " + transformer.isPresent());
+        }
+        
         return transformer.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -35,9 +57,24 @@ public class TransformerController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Transformer> updateTransformer(@PathVariable UUID id, @RequestBody Transformer transformerDetails) {
-        Optional<Transformer> transformer = transformerRepository.findById(id);
+    public ResponseEntity<Transformer> updateTransformer(@PathVariable String id, @RequestBody Transformer transformerDetails) {
+        System.out.println("🔄 Attempting to update transformer with ID: " + id);
+        
+        Optional<Transformer> transformer;
+        
+        // Try to parse as UUID first
+        try {
+            UUID uuid = UUID.fromString(id);
+            transformer = transformerRepository.findById(uuid);
+            System.out.println("🔍 Found transformer by UUID: " + transformer.isPresent());
+        } catch (IllegalArgumentException e) {
+            // If not a valid UUID, try to find by code
+            transformer = transformerRepository.findByCode(id);
+            System.out.println("🔍 Found transformer by code: " + transformer.isPresent());
+        }
+        
         if (transformer.isEmpty()) {
+            System.out.println("❌ Transformer not found: " + id);
             return ResponseEntity.notFound().build();
         }
 
@@ -52,15 +89,34 @@ public class TransformerController {
         existingTransformer.setLastInspection(transformerDetails.getLastInspection());
 
         Transformer updatedTransformer = transformerRepository.save(existingTransformer);
+        System.out.println("✅ Successfully updated transformer: " + id);
         return ResponseEntity.ok(updatedTransformer);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteTransformer(@PathVariable UUID id) {
-        if (!transformerRepository.existsById(id)) {
+    public ResponseEntity<Void> deleteTransformer(@PathVariable String id) {
+        System.out.println("🗑️ Attempting to delete transformer with ID: " + id);
+        
+        Optional<Transformer> transformer;
+        
+        // Try to parse as UUID first
+        try {
+            UUID uuid = UUID.fromString(id);
+            transformer = transformerRepository.findById(uuid);
+            System.out.println("🔍 Found transformer by UUID: " + transformer.isPresent());
+        } catch (IllegalArgumentException e) {
+            // If not a valid UUID, try to find by code
+            transformer = transformerRepository.findByCode(id);
+            System.out.println("🔍 Found transformer by code: " + transformer.isPresent());
+        }
+        
+        if (transformer.isPresent()) {
+            transformerRepository.delete(transformer.get());
+            System.out.println("✅ Successfully deleted transformer: " + id);
+            return ResponseEntity.noContent().build();
+        } else {
+            System.out.println("❌ Transformer not found: " + id);
             return ResponseEntity.notFound().build();
         }
-        transformerRepository.deleteById(id);
-        return ResponseEntity.noContent().build();
     }
 }

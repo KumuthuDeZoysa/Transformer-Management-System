@@ -8,6 +8,7 @@ com\transformer\management\entity\User.class
 com\transformer\management\TransformerBackendApplication.class
 com\transformer\management\controller\AuthController.class
 com\transformer\management\controller\InspectionController.class
+com\transformer\management\controller\HealthController.class
 com\transformer\management\controller\SeedController.class
 com\transformer\management\config\SecurityConfig.class
 com\transformer\management\controller\TransformerController.class

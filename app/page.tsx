@@ -8,14 +8,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DataTable } from "@/components/ui/data-table"
 import { StatsCard } from "@/components/ui/stats-card"
 import { StatusBadge } from "@/components/ui/status-badge"
-import { AlertTriangle, CheckCircle, Clock, Plus, Eye, Edit, Trash2, Search, Zap, Activity } from "lucide-react"
+import { AlertTriangle, CheckCircle, Clock, Plus, Eye, Edit, Trash2, Search, Zap, Activity, Wifi, WifiOff } from "lucide-react"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { TransformerForm } from "@/components/forms/transformer-form"
 import type { TransformerFormData } from "@/components/forms/transformer-form"
-import { transformerApi, statsApi, type Transformer } from "@/lib/mock-api"
-import { fetchTransformersFromDb } from "@/lib/db-api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+
+// Import backend API instead of mock API
+import backendApi, { type BackendTransformer } from "@/lib/backend-api"
+// Keep fallback to mock API and Supabase for comparison
+import { transformerApi as mockApi, statsApi } from "@/lib/mock-api"
+import { fetchTransformersFromDb } from "@/lib/db-api"
+
+// Type for unified transformer interface
+interface Transformer {
+  id: string
+  poleNo: string
+  region: string
+  type: "Distribution" | "Bulk"
+  capacity: string
+  location: string
+  status: "Normal" | "Warning" | "Critical"
+  lastInspection: string
+  createdAt: string
+  updatedAt: string
+}
 
 // (Removed duplicate TransformerFormData interface, now imported from the form)
 
@@ -51,11 +70,53 @@ export default function TransformersPage() {
   const [stats, setStats] = useState<any>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [backendConnected, setBackendConnected] = useState<boolean | null>(null)
+  const [dataSource, setDataSource] = useState<'backend' | 'supabase' | 'mock'>('backend')
+
+  // Helper function to convert BackendTransformer to Transformer
+  const convertBackendTransformer = (bt: BackendTransformer): Transformer => ({
+    id: bt.code || bt.id,
+    poleNo: bt.poleNo || "",
+    region: bt.region || "",
+    type: (bt.type as any) || "Distribution",
+    capacity: bt.capacity || "",
+    location: bt.location || "",
+    status: bt.status || "Normal",
+    lastInspection: bt.lastInspection || "Not inspected",
+    createdAt: bt.createdAt,
+    updatedAt: bt.updatedAt,
+  })
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Try DB first
+        // First, check if backend is available
+        const healthCheck = await backendApi.health.checkBackendStatus()
+        setBackendConnected(healthCheck.status === 'healthy')
+
+        if (healthCheck.status === 'healthy') {
+          // Use Spring Boot backend
+          console.log('🚀 Loading data from Spring Boot backend...')
+          const backendTransformers = await backendApi.transformers.getAll()
+          const converted = backendTransformers.map(convertBackendTransformer)
+          setTransformersData(converted)
+          setDataSource('backend')
+          
+          // Calculate stats from backend data
+          const normal = converted.filter((t) => t.status === "Normal").length
+          const warning = converted.filter((t) => t.status === "Warning").length
+          const critical = converted.filter((t) => t.status === "Critical").length
+          setStats({
+            totalTransformers: converted.length,
+            pendingInspections: warning + critical,
+            criticalAlerts: critical,
+            inspectionsToday: 0,
+          })
+          return
+        }
+
+        // Fallback to Supabase
+        console.log('📡 Backend unavailable, falling back to Supabase...')
         try {
           const dbRows = await fetchTransformersFromDb()
           if (dbRows.length > 0) {
@@ -72,6 +133,8 @@ export default function TransformersPage() {
               updatedAt: r.updated_at,
             }))
             setTransformersData(mapped)
+            setDataSource('supabase')
+            
             // Simple stats from DB rows
             const normal = mapped.filter((t) => t.status === "Normal").length
             const warning = mapped.filter((t) => t.status === "Warning").length
@@ -85,18 +148,21 @@ export default function TransformersPage() {
             return
           }
         } catch (e) {
-          // fall back to mock below
+          console.warn('Supabase also failed, falling back to mock data')
         }
 
-        // Fallback to mock
+        // Final fallback to mock data
+        console.log('🎭 Using mock data as final fallback...')
         const [transformers, dashboardStats] = await Promise.all([
-          transformerApi.getAll(),
+          mockApi.getAll(),
           statsApi.getDashboardStats(),
         ])
         setTransformersData(transformers)
         setStats(dashboardStats)
+        setDataSource('mock')
       } catch (error) {
         console.error("Failed to load data:", error)
+        setBackendConnected(false)
       } finally {
         setLoading(false)
       }
@@ -120,103 +186,136 @@ export default function TransformersPage() {
   const handleFormSubmit = async (formData: TransformerFormData) => {
     try {
       if (editingTransformer) {
-        // Persist update to DB
-        const res = await fetch(`/api/transformers/${editingTransformer.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // Update existing transformer
+        if (dataSource === 'backend' && backendConnected) {
+          // Use Spring Boot backend
+          const updated = await backendApi.transformers.update(editingTransformer.id, {
+            code: formData.id,
             poleNo: formData.poleNo,
             region: formData.region,
             type: formData.type,
             capacity: formData.capacity,
             location: formData.location,
-          }),
-        })
-        const updated = await res.json()
-        if (!res.ok) throw new Error(updated?.error || 'Update failed')
-        // Refresh list from DB to ensure we show the latest values
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          const mapped: Transformer[] = dbRows.map((r) => ({
-            id: r.code || r.id,
-            poleNo: r.pole_no || "",
-            region: r.region || "",
-            type: (r.type as any) || "Distribution",
-            capacity: r.capacity || "",
-            location: r.location || "",
-            status: (r.status as any) || "Normal",
-            lastInspection: r.last_inspection || "Not inspected",
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-          setTransformersData(mapped)
-        } catch {
-          // fallback to local update if DB fetch fails
-          const updatedTransformer: Transformer = {
-            id: updated.code || updated.id,
-            poleNo: updated.pole_no || '',
-            region: updated.region || '',
-            type: (updated.type as any) || 'Distribution',
-            capacity: updated.capacity || '',
-            location: updated.location || '',
-            status: (updated.status as any) || 'Normal',
-            lastInspection: updated.last_inspection || editingTransformer.lastInspection,
-            createdAt: updated.created_at || editingTransformer.createdAt,
-            updatedAt: updated.updated_at || new Date().toISOString(),
+          })
+          const convertedUpdated = convertBackendTransformer(updated)
+          setTransformersData((prev) => prev.map((t) => (t.id === editingTransformer.id ? convertedUpdated : t)))
+        } else {
+          // Fallback to Supabase API
+          const res = await fetch(`/api/transformers/${editingTransformer.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              poleNo: formData.poleNo,
+              region: formData.region,
+              type: formData.type,
+              capacity: formData.capacity,
+              location: formData.location,
+            }),
+          })
+          const updated = await res.json()
+          if (!res.ok) throw new Error(updated?.error || 'Update failed')
+          
+          // Refresh list from DB
+          try {
+            const dbRows = await fetchTransformersFromDb()
+            const mapped: Transformer[] = dbRows.map((r) => ({
+              id: r.code || r.id,
+              poleNo: r.pole_no || "",
+              region: r.region || "",
+              type: (r.type as any) || "Distribution",
+              capacity: r.capacity || "",
+              location: r.location || "",
+              status: (r.status as any) || "Normal",
+              lastInspection: r.last_inspection || "Not inspected",
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            }))
+            setTransformersData(mapped)
+          } catch {
+            // fallback to local update if DB fetch fails
+            const updatedTransformer: Transformer = {
+              id: updated.code || updated.id,
+              poleNo: updated.pole_no || '',
+              region: updated.region || '',
+              type: (updated.type as any) || 'Distribution',
+              capacity: updated.capacity || '',
+              location: updated.location || '',
+              status: (updated.status as any) || 'Normal',
+              lastInspection: updated.last_inspection || editingTransformer.lastInspection,
+              createdAt: updated.created_at || editingTransformer.createdAt,
+              updatedAt: updated.updated_at || new Date().toISOString(),
+            }
+            setTransformersData((prev) => prev.map((t) => (t.id === editingTransformer.id ? updatedTransformer : t)))
           }
-          setTransformersData((prev) => prev.map((t) => (t.id === editingTransformer.id ? updatedTransformer : t)))
         }
       } else {
-        // Persist create to DB
-        const res = await fetch('/api/transformers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: formData.id,
+        // Create new transformer
+        if (dataSource === 'backend' && backendConnected) {
+          // Use Spring Boot backend
+          const created = await backendApi.transformers.create({
+            code: formData.id,
             poleNo: formData.poleNo,
             region: formData.region,
             type: formData.type,
             capacity: formData.capacity,
             location: formData.location,
-          }),
-        })
-        const created = await res.json()
-        if (!res.ok) throw new Error(created?.error || 'Create failed')
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          const mapped: Transformer[] = dbRows.map((r) => ({
-            id: r.code || r.id,
-            poleNo: r.pole_no || "",
-            region: r.region || "",
-            type: (r.type as any) || "Distribution",
-            capacity: r.capacity || "",
-            location: r.location || "",
-            status: (r.status as any) || "Normal",
-            lastInspection: r.last_inspection || "Not inspected",
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-          setTransformersData(mapped)
-        } catch {
-          const newTransformer: Transformer = {
-            id: created.code || created.id,
-            poleNo: created.pole_no || '',
-            region: created.region || '',
-            type: (created.type as any) || 'Distribution',
-            capacity: created.capacity || '',
-            location: created.location || '',
-            status: (created.status as any) || 'Normal',
-            lastInspection: created.last_inspection || 'Not inspected',
-            createdAt: created.created_at || new Date().toISOString(),
-            updatedAt: created.updated_at || new Date().toISOString(),
+          })
+          const convertedCreated = convertBackendTransformer(created)
+          setTransformersData((prev) => [...prev, convertedCreated])
+        } else {
+          // Fallback to Supabase API
+          const res = await fetch('/api/transformers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: formData.id,
+              poleNo: formData.poleNo,
+              region: formData.region,
+              type: formData.type,
+              capacity: formData.capacity,
+              location: formData.location,
+            }),
+          })
+          const created = await res.json()
+          if (!res.ok) throw new Error(created?.error || 'Create failed')
+          
+          try {
+            const dbRows = await fetchTransformersFromDb()
+            const mapped: Transformer[] = dbRows.map((r) => ({
+              id: r.code || r.id,
+              poleNo: r.pole_no || "",
+              region: r.region || "",
+              type: (r.type as any) || "Distribution",
+              capacity: r.capacity || "",
+              location: r.location || "",
+              status: (r.status as any) || "Normal",
+              lastInspection: r.last_inspection || "Not inspected",
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            }))
+            setTransformersData(mapped)
+          } catch {
+            const newTransformer: Transformer = {
+              id: created.code || created.id,
+              poleNo: created.pole_no || '',
+              region: created.region || '',
+              type: (created.type as any) || 'Distribution',
+              capacity: created.capacity || '',
+              location: created.location || '',
+              status: (created.status as any) || 'Normal',
+              lastInspection: created.last_inspection || 'Not inspected',
+              createdAt: created.created_at || new Date().toISOString(),
+              updatedAt: created.updated_at || new Date().toISOString(),
+            }
+            setTransformersData((prev) => [...prev, newTransformer])
           }
-          setTransformersData((prev) => [...prev, newTransformer])
         }
       }
       setShowForm(false)
       setEditingTransformer(undefined)
     } catch (error) {
-      console.error("Failed to save transformer:", error)
+      console.error("Form submission failed:", error)
+      alert(`Failed to ${editingTransformer ? 'update' : 'create'} transformer: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -227,26 +326,35 @@ export default function TransformersPage() {
 
   const handleEdit = async (transformer: Transformer) => {
     try {
-      const res = await fetch(`/api/transformers/${transformer.id}`)
-      if (res.ok) {
-        const t = await res.json()
-        const mapped: Transformer = {
-          id: t.code || t.id,
-          poleNo: t.pole_no || "",
-          region: t.region || "",
-          type: (t.type as "Distribution" | "Bulk") || "Distribution",
-          capacity: t.capacity || "",
-          location: t.location || "",
-          status: (t.status as any) || "Normal",
-          lastInspection: t.last_inspection || transformer.lastInspection,
-          createdAt: t.created_at || transformer.createdAt,
-          updatedAt: t.updated_at || transformer.updatedAt,
-        }
+      if (dataSource === 'backend' && backendConnected) {
+        // Use Spring Boot backend
+        const backendTransformer = await backendApi.transformers.getById(transformer.id)
+        const mapped = convertBackendTransformer(backendTransformer)
         setEditingTransformer(mapped)
       } else {
-        setEditingTransformer(transformer)
+        // Fallback to Supabase API
+        const res = await fetch(`/api/transformers/${transformer.id}`)
+        if (res.ok) {
+          const t = await res.json()
+          const mapped: Transformer = {
+            id: t.code || t.id,
+            poleNo: t.pole_no || "",
+            region: t.region || "",
+            type: (t.type as "Distribution" | "Bulk") || "Distribution",
+            capacity: t.capacity || "",
+            location: t.location || "",
+            status: (t.status as any) || "Normal",
+            lastInspection: t.last_inspection || transformer.lastInspection,
+            createdAt: t.created_at || transformer.createdAt,
+            updatedAt: t.updated_at || transformer.updatedAt,
+          }
+          setEditingTransformer(mapped)
+        } else {
+          setEditingTransformer(transformer)
+        }
       }
-    } catch {
+    } catch (error) {
+      console.error('Failed to fetch transformer for editing:', error)
       setEditingTransformer(transformer)
     }
     setShowForm(true)
@@ -260,31 +368,39 @@ export default function TransformersPage() {
   const confirmDelete = async () => {
     if (!deleteTargetId) return
     try {
-      const res = await fetch(`/api/transformers/${deleteTargetId}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error(j?.error || 'Delete failed')
-      }
-      try {
-        const dbRows = await fetchTransformersFromDb()
-        const mapped: Transformer[] = dbRows.map((r) => ({
-          id: r.code || r.id,
-          poleNo: r.pole_no || "",
-          region: r.region || "",
-          type: (r.type as any) || "Distribution",
-          capacity: r.capacity || "",
-          location: r.location || "",
-          status: (r.status as any) || "Normal",
-          lastInspection: r.last_inspection || "Not inspected",
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        }))
-        setTransformersData(mapped)
-      } catch {
+      if (dataSource === 'backend' && backendConnected) {
+        // Use Spring Boot backend
+        await backendApi.transformers.delete(deleteTargetId)
         setTransformersData((prev) => prev.filter((t) => t.id !== deleteTargetId))
+      } else {
+        // Fallback to Supabase API
+        const res = await fetch(`/api/transformers/${deleteTargetId}`, { method: 'DELETE' })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          throw new Error(j?.error || 'Delete failed')
+        }
+        try {
+          const dbRows = await fetchTransformersFromDb()
+          const mapped: Transformer[] = dbRows.map((r) => ({
+            id: r.code || r.id,
+            poleNo: r.pole_no || "",
+            region: r.region || "",
+            type: (r.type as any) || "Distribution",
+            capacity: r.capacity || "",
+            location: r.location || "",
+            status: (r.status as any) || "Normal",
+            lastInspection: r.last_inspection || "Not inspected",
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          }))
+          setTransformersData(mapped)
+        } catch {
+          setTransformersData((prev) => prev.filter((t) => t.id !== deleteTargetId))
+        }
       }
     } catch (error) {
       console.error("Failed to delete transformer:", error)
+      alert(`Failed to delete transformer: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setDeleteDialogOpen(false)
       setDeleteTargetId(null)
@@ -409,7 +525,30 @@ export default function TransformersPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-sans font-bold text-foreground">Transformer Management</h1>
-              <p className="text-muted-foreground font-serif">Manage transformer records and inspections</p>
+              <div className="flex items-center gap-4">
+                <p className="text-muted-foreground font-serif">Manage transformer records and inspections</p>
+                <div className="flex items-center gap-2">
+                  {backendConnected === true ? (
+                    <div className="flex items-center gap-1 text-green-600 text-xs">
+                      <Wifi className="h-3 w-3" />
+                      <span>Backend: Connected</span>
+                    </div>
+                  ) : backendConnected === false ? (
+                    <div className="flex items-center gap-1 text-orange-600 text-xs">
+                      <WifiOff className="h-3 w-3" />
+                      <span>Backend: Offline</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 text-gray-500 text-xs">
+                      <Activity className="h-3 w-3" />
+                      <span>Checking...</span>
+                    </div>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    ({dataSource === 'backend' ? 'Spring Boot' : dataSource === 'supabase' ? 'Supabase' : 'Mock Data'})
+                  </span>
+                </div>
+              </div>
             </div>
             <Button className="button-primary" onClick={() => setShowForm(true)}>
               <Plus className="mr-2 h-4 w-4" />

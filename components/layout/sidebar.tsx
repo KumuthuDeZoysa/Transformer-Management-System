@@ -11,6 +11,7 @@ const navigation = [
   { name: "Transformers", href: "/", icon: Zap },
   { name: "Gallery", href: "/gallery", icon: Images },
   { name: "Inspections", href: "/inspections", icon: ListChecks },
+  { name: "Backend Demo", href: "/backend-demo", icon: Settings },
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 
