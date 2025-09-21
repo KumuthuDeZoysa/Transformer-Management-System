@@ -12,9 +12,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @RestController
 @RequestMapping("/inspections")
+@CrossOrigin(origins = {"http://localhost:3000", "http://localhost:3001"})
 public class InspectionController {
 
     @Autowired
@@ -22,6 +25,37 @@ public class InspectionController {
 
     @Autowired
     private TransformerRepository transformerRepository;
+
+    // Auto-generate inspection number with format: INSP-YYYYMMDD-NNNN
+    private String generateInspectionNumber() {
+        String today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String prefix = "INSP-" + today + "-";
+        
+        // Find the highest sequence number for today
+        List<Inspection> todaysInspections = inspectionRepository.findByInspectionNoStartingWith(prefix);
+        
+        int nextSequence = 1;
+        if (!todaysInspections.isEmpty()) {
+            // Extract sequence numbers and find the maximum
+            int maxSequence = todaysInspections.stream()
+                .mapToInt(inspection -> {
+                    String inspectionNo = inspection.getInspectionNo();
+                    if (inspectionNo != null && inspectionNo.startsWith(prefix)) {
+                        try {
+                            return Integer.parseInt(inspectionNo.substring(prefix.length()));
+                        } catch (NumberFormatException e) {
+                            return 0;
+                        }
+                    }
+                    return 0;
+                })
+                .max()
+                .orElse(0);
+            nextSequence = maxSequence + 1;
+        }
+        
+        return prefix + String.format("%04d", nextSequence);
+    }
 
     @GetMapping
     public List<Inspection> getAllInspections() {
@@ -90,7 +124,13 @@ public class InspectionController {
             // Create inspection
             Inspection inspection = new Inspection();
             inspection.setTransformer(transformer.get());
-            inspection.setInspectionNo((String) requestData.get("inspectionNo"));
+            
+            // Auto-generate inspection number if not provided
+            String inspectionNo = (String) requestData.get("inspectionNo");
+            if (inspectionNo == null || inspectionNo.trim().isEmpty()) {
+                inspectionNo = generateInspectionNumber();
+            }
+            inspection.setInspectionNo(inspectionNo);
             
             // Handle inspectedAt
             String inspectedAtStr = (String) requestData.get("inspectedAt");
@@ -119,8 +159,9 @@ public class InspectionController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Inspection> updateInspection(@PathVariable String id, @RequestBody Inspection inspectionDetails) {
+    public ResponseEntity<Inspection> updateInspection(@PathVariable String id, @RequestBody Map<String, Object> requestData) {
         System.out.println("🔄 Attempting to update inspection with ID: " + id);
+        System.out.println("🔄 Update data received: " + requestData);
         
         Optional<Inspection> inspection;
         
@@ -140,16 +181,47 @@ public class InspectionController {
             return ResponseEntity.notFound().build();
         }
 
-        Inspection existingInspection = inspection.get();
-        existingInspection.setInspectionNo(inspectionDetails.getInspectionNo());
-        existingInspection.setInspectedAt(inspectionDetails.getInspectedAt());
-        existingInspection.setMaintenanceDate(inspectionDetails.getMaintenanceDate());
-        existingInspection.setStatus(inspectionDetails.getStatus());
-        existingInspection.setNotes(inspectionDetails.getNotes());
+        try {
+            Inspection existingInspection = inspection.get();
+            
+            // Update fields if provided
+            if (requestData.containsKey("inspectionNo")) {
+                existingInspection.setInspectionNo((String) requestData.get("inspectionNo"));
+            }
+            
+            // Handle inspectedAt
+            if (requestData.containsKey("inspectedAt")) {
+                String inspectedAtStr = (String) requestData.get("inspectedAt");
+                if (inspectedAtStr != null) {
+                    existingInspection.setInspectedAt(java.time.LocalDateTime.parse(inspectedAtStr.replace("Z", "")));
+                }
+            }
+            
+            // Handle maintenanceDate
+            if (requestData.containsKey("maintenanceDate")) {
+                String maintenanceDateStr = (String) requestData.get("maintenanceDate");
+                if (maintenanceDateStr != null && !maintenanceDateStr.isEmpty()) {
+                    existingInspection.setMaintenanceDate(java.time.LocalDateTime.parse(maintenanceDateStr.replace("Z", "")));
+                }
+            }
+            
+            if (requestData.containsKey("status")) {
+                existingInspection.setStatus((String) requestData.get("status"));
+            }
+            
+            if (requestData.containsKey("notes")) {
+                existingInspection.setNotes((String) requestData.get("notes"));
+            }
 
-        Inspection updatedInspection = inspectionRepository.save(existingInspection);
-        System.out.println("✅ Successfully updated inspection: " + id);
-        return ResponseEntity.ok(updatedInspection);
+            Inspection updatedInspection = inspectionRepository.save(existingInspection);
+            System.out.println("✅ Successfully updated inspection: " + id);
+            return ResponseEntity.ok(updatedInspection);
+            
+        } catch (Exception e) {
+            System.out.println("❌ Failed to update inspection: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @DeleteMapping("/{id}")

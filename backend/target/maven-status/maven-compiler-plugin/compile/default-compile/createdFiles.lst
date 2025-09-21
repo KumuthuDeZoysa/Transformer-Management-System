@@ -13,5 +13,6 @@ com\transformer\management\controller\SeedController.class
 com\transformer\management\config\SecurityConfig.class
 com\transformer\management\controller\TransformerController.class
 com\transformer\management\entity\Image.class
+com\transformer\management\dto\ImageDTO.class
 com\transformer\management\controller\ImageController.class
 com\transformer\management\repository\TransformerRepository.class

@@ -12,6 +12,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/transformers")
+@CrossOrigin(origins = {"http://localhost:3000", "http://localhost:3001"})
 public class TransformerController {
 
     @Autowired

@@ -6,6 +6,7 @@ D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\controller\AuthController.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\entity\User.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\controller\ImageController.java
+D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\dto\ImageDTO.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\controller\HealthController.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\repository\TransformerRepository.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\controller\InspectionController.java

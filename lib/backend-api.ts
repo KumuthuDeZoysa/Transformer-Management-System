@@ -1,5 +1,16 @@
 // Backend API client for Spring Boot integration
-// Base URL for the Spring Boot backend
+
+export interface CreateImageRequest {
+  transformerId: string
+  url?: string
+  label?: string
+  imageType: string // "baseline" or "maintenance"
+  uploaderName: string
+  environmentalCondition?: string // "sunny", "cloudy", "rainy"
+  comments?: string
+  inspectionId?: string
+  capturedAt?: string
+}
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'
 
 // Types matching the backend entities
@@ -19,11 +30,18 @@ export interface BackendTransformer {
 
 export interface BackendImage {
   id: string
-  transformer: { id: string } // Simplified transformer reference
   url: string
   label: string | null
+  imageType: string
+  uploaderName: string | null
+  environmentalCondition: string | null
+  comments: string | null
   capturedAt: string
   createdAt: string
+  transformerId: string
+  transformerCode: string | null
+  inspectionId: string | null
+  inspectionNo: string | null
 }
 
 export interface BackendInspection {
@@ -46,13 +64,6 @@ export interface CreateTransformerRequest {
   capacity?: string
   location?: string
   status?: 'Normal' | 'Warning' | 'Critical'
-}
-
-export interface CreateImageRequest {
-  transformerId: string
-  url: string
-  label?: string
-  capturedAt?: string
 }
 
 export interface CreateInspectionRequest {
@@ -153,9 +164,34 @@ export const imageApi = {
     return apiCall<BackendImage[]>('/images')
   },
 
+  // Get baseline image for transformer
+  async getBaselineImage(transformerId: string): Promise<BackendImage | null> {
+    try {
+      return await apiCall<BackendImage>(`/images/baseline/${transformerId}`)
+    } catch (error) {
+      // Return null if no baseline image found (404)
+      return null
+    }
+  },
+
   // Get images by transformer ID
   async getByTransformerId(transformerId: string): Promise<BackendImage[]> {
     return apiCall<BackendImage[]>(`/images?transformerId=${transformerId}`)
+  },
+
+  // Get images by transformer ID and image type
+  async getByTransformerIdAndType(transformerId: string, imageType: string): Promise<BackendImage[]> {
+    return apiCall<BackendImage[]>(`/images?transformerId=${transformerId}&imageType=${imageType}`)
+  },
+
+  // Get images by inspection ID
+  async getByInspectionId(inspectionId: string): Promise<BackendImage[]> {
+    return apiCall<BackendImage[]>(`/images?inspectionId=${inspectionId}`)
+  },
+
+  // Get images by image type
+  async getByType(imageType: string): Promise<BackendImage[]> {
+    return apiCall<BackendImage[]>(`/images?imageType=${imageType}`)
   },
 
   // Get image by ID
@@ -198,6 +234,28 @@ export const imageApi = {
     return apiCall<void>(`/images/${id}`, {
       method: 'DELETE',
     })
+  },
+
+  // Upload image file
+  async upload(file: File, transformerId: string, label?: string): Promise<{ url: string, image: BackendImage, message: string }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('transformer_id', transformerId)
+    if (label) {
+      formData.append('label', label)
+    }
+
+    const response = await fetch(`${BACKEND_BASE_URL}/images/upload`, {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Upload failed' }))
+      throw new Error(errorData.error || `HTTP ${response.status}`)
+    }
+
+    return response.json()
   },
 }
 
@@ -260,9 +318,46 @@ export const inspectionApi = {
   },
 }
 
-// File upload helper (for image uploads with metadata)
+// File upload helper (for direct backend image uploads)
 export const uploadApi = {
-  // Upload image file and create metadata in one operation
+  // Upload image file directly to Spring Boot backend
+  async uploadImageToBackend(
+    file: File,
+    transformerId: string,
+    imageType: 'baseline' | 'maintenance',
+    uploaderName: string,
+    environmentalCondition?: 'sunny' | 'cloudy' | 'rainy',
+    comments?: string,
+    inspectionId?: string,
+    label?: string
+  ): Promise<{ url: string; image: BackendImage; message: string }> {
+    
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('transformer_id', transformerId)
+    formData.append('image_type', imageType)
+    formData.append('uploader_name', uploaderName)
+    
+    if (environmentalCondition) formData.append('environmental_condition', environmentalCondition)
+    if (comments) formData.append('comments', comments)
+    if (inspectionId) formData.append('inspection_id', inspectionId)
+    if (label) formData.append('label', label)
+    
+    // Call Spring Boot backend directly
+    const response = await fetch(`${BACKEND_BASE_URL}/images/upload`, {
+      method: 'POST',
+      body: formData,
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.error || `Upload failed: ${response.statusText}`)
+    }
+    
+    return response.json()
+  },
+
+  // Legacy method for compatibility (uses Next.js API route)
   async uploadImage(
     file: File,
     transformerId: string,
@@ -273,8 +368,7 @@ export const uploadApi = {
       comments?: string
       inspectionId?: string
     } = {}
-  ): Promise<{ url: string; image: BackendImage }> {
-    // First upload to Cloudinary via our existing Next.js API
+  ): Promise<{ url: string; image: any }> {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('transformer_id', transformerId)
@@ -294,20 +388,7 @@ export const uploadApi = {
       throw new Error('Image upload failed')
     }
     
-    const uploadResult = await uploadResponse.json()
-    
-    // Then create the metadata in the backend
-    const imageMetadata = await imageApi.create({
-      transformerId,
-      url: uploadResult.url,
-      label: `${metadata.imageType || 'maintenance'} - ${metadata.uploaderName || 'Unknown'} - ${new Date().toISOString()}`,
-      capturedAt: new Date().toISOString(),
-    })
-    
-    return {
-      url: uploadResult.url,
-      image: imageMetadata,
-    }
+    return uploadResponse.json()
   },
 }
 

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import cloudinary from '@/lib/cloudinary'
-import { createServerClient } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
+
+const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,32 +45,58 @@ export async function POST(req: NextRequest) {
     })
 
     const imageUrl: string = uploadResult.secure_url
-    const supabase = createServerClient()
     
-    // Create a structured label that includes metadata
-    const metadata = {
-      originalName: label ?? uploadResult.original_filename,
-      imageType: imageType || 'maintenance',
-      uploaderName: uploaderName || 'Unknown',
-      environmentalCondition: environmentalCondition || null,
-      comments: comments || null,
-      inspectionId: inspectionId || null
+    // Try to save metadata to Spring Boot backend first
+    try {
+      const backendFormData = new FormData()
+      backendFormData.append('file', file)
+      backendFormData.append('transformer_id', transformerId)
+      
+      if (imageType) backendFormData.append('image_type', imageType)
+      if (uploaderName) backendFormData.append('uploader_name', uploaderName)
+      if (environmentalCondition) backendFormData.append('environmental_condition', environmentalCondition)
+      if (comments) backendFormData.append('comments', comments)
+      if (inspectionId) backendFormData.append('inspection_id', inspectionId)
+      if (label) backendFormData.append('label', label)
+      
+      const backendResponse = await fetch(`${BACKEND_BASE_URL}/images/upload`, {
+        method: 'POST',
+        body: backendFormData,
+      })
+      
+      if (backendResponse.ok) {
+        const backendResult = await backendResponse.json()
+        return NextResponse.json({
+          url: imageUrl,
+          image: backendResult.image,
+          message: 'Uploaded via Spring Boot backend',
+          source: 'backend'
+        }, { status: 201 })
+      }
+      
+      console.warn('Backend upload failed, falling back to legacy storage')
+    } catch (backendError) {
+      console.warn('Backend not available, using legacy storage:', backendError)
     }
     
-    const structuredLabel = `${metadata.originalName} [${metadata.imageType}] by ${metadata.uploaderName}`
-    
-    // Use existing schema fields only
-    const payload = {
+    // Fallback: Return basic response for legacy compatibility
+    // Note: This should eventually be removed once backend is fully integrated
+    const fallbackImage = {
+      id: uploadResult.public_id,
       transformer_id: transformerId,
       url: imageUrl,
-      label: structuredLabel,
+      label: label || uploadResult.original_filename,
       captured_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
     }
     
-    const { data, error } = await supabase.from('images').insert(payload).select('*').single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({
+      url: imageUrl,
+      image: fallbackImage,
+      message: 'Uploaded via legacy route (backend unavailable)',
+      source: 'legacy'
+    }, { status: 201 })
 
-    return NextResponse.json({ url: imageUrl, image: data, metadata }, { status: 201 })
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Upload failed' }, { status: 500 })
   }

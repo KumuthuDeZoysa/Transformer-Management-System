@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Upload, ImageIcon, ArrowLeft, CheckCircle, Clock } from "lucide-react"
 import Link from "next/link"
+import { transformerApi, imageApi } from "@/lib/backend-api"
 
 type DbTransformer = {
   id: string // uuid
@@ -47,15 +48,13 @@ export default function ImageUploadPage() {
   // Mock API storage
   const [imageUploads, setImageUploads] = useState<ImageUpload[]>([])
 
-  // Load transformers from DB for dropdown
+  // Load transformers from backend API for dropdown
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
-        const res = await fetch('/api/transformers?limit=500')
-        if (!res.ok) throw new Error('Failed to fetch transformers')
-        const rows: any[] = await res.json()
-        const opts = rows.map((r: DbTransformer) => ({
+        const transformers = await transformerApi.getAll()
+        const opts = transformers.map((r) => ({
           uuid: r.id,
           code: r.code || r.id,
           label: `${r.code || r.id} - ${r.region || r.location || ''}`.trim(),
@@ -105,21 +104,36 @@ export default function ImageUploadPage() {
       })
     }, 200)
 
-    // Upload to server -> Cloudinary
+    // Upload to backend server using new backend API
     setTimeout(async () => {
       try {
-        const form = new FormData()
-        form.append('file', selectedFile!)
-        form.append('transformer_id', selectedTransformer)
-        form.append('label', selectedFile!.name)
-
-        const resp = await fetch('/api/upload-image', {
-          method: 'POST',
-          body: form,
-        })
-        const data = await resp.json().catch(() => null)
-        if (!resp.ok) throw new Error((data && data.error) || 'Upload failed')
-
+        let result
+        
+        // Try backend API first
+        try {
+          result = await backendApi.upload.uploadImageToBackend(
+            selectedFile!,
+            selectedTransformer,
+            imageType as 'baseline' | 'maintenance',
+            uploaderName,
+            imageType === 'baseline' ? (environmentalCondition as 'sunny' | 'cloudy' | 'rainy') : undefined,
+            comments || undefined,
+            undefined, // no inspection ID for standalone uploads
+            `${selectedFile!.name} - ${imageType} by ${uploaderName}`
+          )
+          console.log('✅ Backend upload successful:', result)
+        } catch (backendError) {
+          console.warn('⚠️ Backend upload failed, trying legacy API:', backendError)
+          // Fallback to legacy API
+          result = await backendApi.upload.uploadImage(selectedFile!, selectedTransformer, {
+            imageType: imageType as 'baseline' | 'maintenance',
+            uploaderName,
+            environmentalCondition: imageType === 'baseline' ? (environmentalCondition as 'sunny' | 'cloudy' | 'rainy') : undefined,
+            comments: comments || undefined,
+          })
+          console.log('✅ Legacy upload successful:', result)
+        }
+        
         const newUpload: ImageUpload = {
           id: Date.now().toString(),
           transformerId: selectedTransformer,
@@ -135,8 +149,9 @@ export default function ImageUploadPage() {
         setUploadComplete(true)
         setIsUploading(false)
       } catch (err) {
-        console.error('Upload failed:', err)
+        console.error('❌ Upload failed:', err)
         setIsUploading(false)
+        alert('Upload failed: ' + (err as Error).message)
         return
       }
 

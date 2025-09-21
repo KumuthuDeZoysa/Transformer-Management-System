@@ -121,26 +121,52 @@ export default function InspectionDetailPage() {
 
         // Load existing images for this transformer and inspection
         try {
-          const imagesResponse = await fetch(`/api/images?transformer_id=${currentInspection.transformer_id}`)
-          if (imagesResponse.ok) {
-            const imagesData = await imagesResponse.json()
-            const allImages = imagesData.items || []
+          // Use backend API instead of Next.js API
+          if (backendConnected) {
+            // Get baseline image using dedicated endpoint
+            const baselineImage = await backendApi.images.getBaselineImage(currentInspection.transformer_id)
+            if (baselineImage) {
+              setBaselineImages([baselineImage])
+            } else {
+              setBaselineImages([])
+            }
             
-            // Separate baseline and maintenance images
-            const baseline = allImages.filter((img: any) => 
-              img.label && img.label.includes('[baseline]')
+            // Get maintenance images for this inspection
+            const maintenanceImages = await backendApi.images.getByTransformerIdAndType(
+              currentInspection.transformer_id, 
+              'maintenance'
             )
-            const maintenance = allImages.filter((img: any) => 
-              img.label && (
-                img.label.includes('[maintenance]') && (
-                  img.label.includes(inspectionId) ||
-                  img.label.includes(currentInspection.inspection_no || '')
+            
+            // Filter maintenance images for this specific inspection
+            const inspectionMaintenanceImages = maintenanceImages.filter((img: any) => 
+              img.inspectionId === inspectionId ||
+              (currentInspection.inspection_no && img.label && img.label.includes(currentInspection.inspection_no))
+            )
+            
+            setMaintenanceImages(inspectionMaintenanceImages)
+          } else {
+            // Fallback to Next.js API if backend is not available
+            const imagesResponse = await fetch(`/api/images?transformer_id=${currentInspection.transformer_id}`)
+            if (imagesResponse.ok) {
+              const imagesData = await imagesResponse.json()
+              const allImages = imagesData.items || []
+              
+              // Separate baseline and maintenance images using label-based logic
+              const baseline = allImages.filter((img: any) => 
+                img.label && img.label.includes('[baseline]')
+              )
+              const maintenance = allImages.filter((img: any) => 
+                img.label && (
+                  img.label.includes('[maintenance]') && (
+                    img.label.includes(inspectionId) ||
+                    img.label.includes(currentInspection.inspection_no || '')
+                  )
                 )
               )
-            )
-            
-            setBaselineImages(baseline)
-            setMaintenanceImages(maintenance)
+              
+              setBaselineImages(baseline)
+              setMaintenanceImages(maintenance)
+            }
           }
         } catch (error) {
           console.error('Failed to load existing images:', error)
@@ -167,26 +193,54 @@ export default function InspectionDetailPage() {
 
   const refreshImages = async () => {
     try {
-      const imagesResponse = await fetch(`/api/images?transformer_id=${inspection?.transformer_id}`)
-      if (imagesResponse.ok) {
-        const imagesData = await imagesResponse.json()
-        const allImages = imagesData.items || []
+      if (!inspection?.transformer_id) return
+
+      if (backendConnected) {
+        // Use backend API with dedicated endpoints
+        // Get baseline image using dedicated endpoint
+        const baselineImage = await backendApi.images.getBaselineImage(inspection.transformer_id)
+        if (baselineImage) {
+          setBaselineImages([baselineImage])
+        } else {
+          setBaselineImages([])
+        }
         
-        // Separate baseline and maintenance images
-        const baseline = allImages.filter((img: any) => 
-          img.label && img.label.includes('[baseline]')
+        // Get maintenance images for this inspection
+        const maintenanceImages = await backendApi.images.getByTransformerIdAndType(
+          inspection.transformer_id, 
+          'maintenance'
         )
-        const maintenance = allImages.filter((img: any) => 
-          img.label && (
-            img.label.includes('[maintenance]') && (
-              img.label.includes(inspectionId) ||
-              img.label.includes(inspection?.inspection_no || '')
+        
+        // Filter maintenance images for this specific inspection
+        const inspectionMaintenanceImages = maintenanceImages.filter((img: any) => 
+          img.inspectionId === inspectionId ||
+          (inspection.inspection_no && img.label && img.label.includes(inspection.inspection_no))
+        )
+        
+        setMaintenanceImages(inspectionMaintenanceImages)
+      } else {
+        // Fallback to Next.js API
+        const imagesResponse = await fetch(`/api/images?transformer_id=${inspection.transformer_id}`)
+        if (imagesResponse.ok) {
+          const imagesData = await imagesResponse.json()
+          const allImages = imagesData.items || []
+          
+          // Separate baseline and maintenance images using label-based logic
+          const baseline = allImages.filter((img: any) => 
+            img.label && img.label.includes('[baseline]')
+          )
+          const maintenance = allImages.filter((img: any) => 
+            img.label && (
+              img.label.includes('[maintenance]') && (
+                img.label.includes(inspectionId) ||
+                img.label.includes(inspection.inspection_no || '')
+              )
             )
           )
-        )
-        
-        setBaselineImages(baseline)
-        setMaintenanceImages(maintenance)
+          
+          setBaselineImages(baseline)
+          setMaintenanceImages(maintenance)
+        }
       }
     } catch (error) {
       console.error('Failed to refresh images:', error)
@@ -221,32 +275,48 @@ export default function InspectionDetailPage() {
     }, 200)
 
     try {
-      // Upload to server -> Cloudinary
-      const form = new FormData()
-      form.append('file', selectedFile)
-      form.append('transformer_id', inspection?.transformer_id || '')
-      
-      // Create structured label with all metadata
-      let structuredLabel = `${selectedFile.name} [${imageType}]`;
-      // Add environmental condition for both baseline and maintenance
-      structuredLabel += ` [env:${environmentalCondition}]`;
-      if (comments) {
-        structuredLabel += ` [comments:${comments}]`;
-      }
-      if (imageType === "maintenance") {
-        structuredLabel += ` [inspection:${inspection?.inspection_no || inspectionId}]`;
-      }
-      if (uploaderName && uploaderName.trim() !== "") {
-        structuredLabel += ` by ${uploaderName.trim()}`;
-      }
-      form.append('label', structuredLabel);
+      let uploadResult
 
-      const resp = await fetch('/api/upload-image', {
-        method: 'POST',
-        body: form,
-      })
-      const data = await resp.json().catch(() => null)
-      if (!resp.ok) throw new Error((data && data.error) || 'Upload failed')
+      if (backendConnected) {
+        // Use backend API for direct upload
+        uploadResult = await backendApi.upload.uploadImageToBackend(
+          selectedFile,
+          inspection?.transformer_id || '',
+          imageType as 'baseline' | 'maintenance',
+          uploaderName,
+          environmentalCondition as 'sunny' | 'cloudy' | 'rainy',
+          comments || undefined,
+          imageType === "maintenance" ? inspectionId : undefined,
+          `${selectedFile.name} - ${imageType} by ${uploaderName}`
+        )
+      } else {
+        // Fallback to Next.js API route
+        const form = new FormData()
+        form.append('file', selectedFile)
+        form.append('transformer_id', inspection?.transformer_id || '')
+        
+        // Create structured label with all metadata
+        let structuredLabel = `${selectedFile.name} [${imageType}]`;
+        // Add environmental condition for both baseline and maintenance
+        structuredLabel += ` [env:${environmentalCondition}]`;
+        if (comments) {
+          structuredLabel += ` [comments:${comments}]`;
+        }
+        if (imageType === "maintenance") {
+          structuredLabel += ` [inspection:${inspection?.inspection_no || inspectionId}]`;
+        }
+        if (uploaderName && uploaderName.trim() !== "") {
+          structuredLabel += ` by ${uploaderName.trim()}`;
+        }
+        form.append('label', structuredLabel);
+
+        const resp = await fetch('/api/upload-image', {
+          method: 'POST',
+          body: form,
+        })
+        uploadResult = await resp.json().catch(() => null)
+        if (!resp.ok) throw new Error((uploadResult && uploadResult.error) || 'Upload failed')
+      }
 
       const newUpload: ImageUpload = {
         id: Date.now().toString(),
@@ -423,7 +493,7 @@ export default function InspectionDetailPage() {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground font-serif mb-2">
-                      Uploaded: {new Date(baselineImages[0].captured_at).toLocaleString()}
+                      Uploaded: {baselineImages[0].capturedAt ? new Date(baselineImages[0].capturedAt).toLocaleString() : 'Unknown date'}
                     </p>
                     <Button 
                       variant="destructive" 
@@ -678,22 +748,12 @@ export default function InspectionDetailPage() {
                   <h4 className="font-sans font-semibold mb-3 text-sm">Uploaded Images</h4>
                   <div className="space-y-2">
                     {maintenanceImages.map((image) => {
-                      const labelParts = image.label.split('[');
-                      const fileName = labelParts[0]?.trim() || image.label;
-                      const envMatch = image.label.match(/\[env:([^\]]+)\]/);
-                      const environment = envMatch ? envMatch[1] : 'Unknown';
-                      // Extract image type (maintenance or baseline)
-                      let imageType = null;
-                      const typeMatch = image.label.match(/\[(baseline|maintenance)\]/);
-                      if (typeMatch && typeMatch[1]) {
-                        imageType = typeMatch[1];
-                      }
                       return (
                         <div key={image.id} className="flex justify-between items-center p-2 bg-muted/30 rounded">
                           <div className="flex-1">
-                            <p className="text-sm font-serif font-medium">{fileName}</p>
+                            <p className="text-sm font-serif font-medium">{image.label || 'Thermal Image'}</p>
                             <p className="text-xs text-muted-foreground font-serif">
-                              {imageType ? `${imageType} • ` : ''}{environment} • {new Date(image.captured_at).toLocaleString()}
+                              {image.imageType ? `${image.imageType} • ` : ''}{image.environmentalCondition || 'Unknown'} • {image.capturedAt ? new Date(image.capturedAt).toLocaleString() : 'Unknown date'}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -741,23 +801,11 @@ export default function InspectionDetailPage() {
                       className="w-full h-full object-cover"
                     />
                     <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-serif">
-                      {new Date(baselineImages[0].captured_at).toLocaleDateString()} {new Date(baselineImages[0].captured_at).toLocaleTimeString()}
+                      {baselineImages[0].capturedAt ? new Date(baselineImages[0].capturedAt).toLocaleDateString() : 'Invalid Date'} {baselineImages[0].capturedAt ? new Date(baselineImages[0].capturedAt).toLocaleTimeString() : 'Invalid Date'}
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground font-serif">
-                    {(() => {
-                      const envMatch = baselineImages[0].label.match(/\[env:([^\]]+)\]/)
-                      // Extract uploader name, but ignore if it's just '[maintenance]' or contains 'Unknown'
-                      let uploader = null;
-                      const uploaderMatch = baselineImages[0].label.match(/by ([^\[]+)/);
-                      if (uploaderMatch && uploaderMatch[1]) {
-                        const cleaned = uploaderMatch[1].replace(/\[.*\]/g, '').trim();
-                        if (cleaned && cleaned.toLowerCase() !== 'unknown') {
-                          uploader = cleaned;
-                        }
-                      }
-                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions${uploader ? ` • ${uploader}` : ''}`;
-                    })()}
+                    {baselineImages[0].environmentalCondition || 'Unknown'} conditions{baselineImages[0].uploaderName ? ` • ${baselineImages[0].uploaderName}` : ''}
                   </div>
                 </div>
 
@@ -774,24 +822,14 @@ export default function InspectionDetailPage() {
                       className="w-full h-full object-cover"
                     />
                     <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-serif">
-                      {new Date(maintenanceImages[maintenanceImages.length - 1].captured_at).toLocaleDateString()} {new Date(maintenanceImages[maintenanceImages.length - 1].captured_at).toLocaleTimeString()}
+                      {maintenanceImages[maintenanceImages.length - 1].capturedAt ? new Date(maintenanceImages[maintenanceImages.length - 1].capturedAt).toLocaleDateString() : 'Invalid Date'} {maintenanceImages[maintenanceImages.length - 1].capturedAt ? new Date(maintenanceImages[maintenanceImages.length - 1].capturedAt).toLocaleTimeString() : 'Invalid Date'}
                     </div>
                     {/* Anomaly indicators */}
                     <div className="absolute top-4 right-4 w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
                     <div className="absolute top-1/3 left-1/2 w-16 h-16 border-2 border-red-500 rounded transform -translate-x-1/2 -translate-y-1/2"></div>
                   </div>
                   <div className="text-xs text-muted-foreground font-serif">
-                    {(() => {
-                      const envMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[env:([^\]]+)\]/)
-                      const commentsMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[comments:([^\]]+)\]/)
-                      // Extract image type (maintenance or baseline)
-                      let imageType = null;
-                      const typeMatch = maintenanceImages[maintenanceImages.length - 1].label.match(/\[(baseline|maintenance)\]/);
-                      if (typeMatch && typeMatch[1]) {
-                        imageType = typeMatch[1];
-                      }
-                      return `${envMatch ? envMatch[1] : 'Unknown'} conditions • ${imageType ? imageType.charAt(0).toUpperCase() + imageType.slice(1) : 'Unknown type'} • Inspection #${inspection?.inspection_no}${commentsMatch ? ` • ${commentsMatch[1]}` : ''}`;
-                    })()}
+                    {maintenanceImages[maintenanceImages.length - 1].environmentalCondition || 'Unknown'} conditions • {maintenanceImages[maintenanceImages.length - 1].imageType ? maintenanceImages[maintenanceImages.length - 1].imageType.charAt(0).toUpperCase() + maintenanceImages[maintenanceImages.length - 1].imageType.slice(1) : 'Unknown type'} • Inspection #{maintenanceImages[maintenanceImages.length - 1].inspectionNo || inspection?.inspection_no || 'null'}{maintenanceImages[maintenanceImages.length - 1].comments ? ` • ${maintenanceImages[maintenanceImages.length - 1].comments}` : ''}
                   </div>
                 </div>
               </div>
