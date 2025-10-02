@@ -121,10 +121,11 @@ public class ImageController {
         
         try {
             UUID uuid = UUID.fromString(transformerId);
-            List<Image> baselineImages = imageRepository.findByTransformerIdAndImageType(uuid, "baseline");
+            // Use the new sorted method to get the most recent baseline image
+            List<Image> baselineImages = imageRepository.findByTransformerIdAndImageTypeOrderByCapturedAtDesc(uuid, "baseline");
             
             if (!baselineImages.isEmpty()) {
-                System.out.println("✅ Found baseline image: " + baselineImages.get(0).getId());
+                System.out.println("✅ Found most recent baseline image: " + baselineImages.get(0).getId() + " captured at: " + baselineImages.get(0).getCapturedAt());
                 return ResponseEntity.ok(convertToDTO(baselineImages.get(0)));
             } else {
                 System.out.println("📭 No baseline image found for transformer: " + transformerId);
@@ -132,6 +133,27 @@ public class ImageController {
             }
         } catch (IllegalArgumentException e) {
             System.out.println("❌ Invalid transformer UUID: " + transformerId);
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @GetMapping("/inspection/{inspectionId}/baseline")
+    public ResponseEntity<ImageDTO> getBaselineImageByInspection(@PathVariable String inspectionId) {
+        System.out.println("🔍 Getting baseline image for inspection: " + inspectionId);
+        
+        try {
+            UUID uuid = UUID.fromString(inspectionId);
+            List<Image> baselineImages = imageRepository.findByInspectionIdAndImageType(uuid, "baseline");
+            
+            if (!baselineImages.isEmpty()) {
+                System.out.println("✅ Found baseline image for inspection: " + baselineImages.get(0).getId());
+                return ResponseEntity.ok(convertToDTO(baselineImages.get(0)));
+            } else {
+                System.out.println("📭 No baseline image found for inspection: " + inspectionId);
+                return ResponseEntity.notFound().build();
+            }
+        } catch (IllegalArgumentException e) {
+            System.out.println("❌ Invalid inspection UUID: " + inspectionId);
             return ResponseEntity.badRequest().build();
         }
     }

@@ -174,6 +174,16 @@ export const imageApi = {
     }
   },
 
+  // Get baseline image for specific inspection
+  async getBaselineImageByInspection(inspectionId: string): Promise<BackendImage | null> {
+    try {
+      return await apiCall<BackendImage>(`/images/inspection/${inspectionId}/baseline`)
+    } catch (error) {
+      // Return null if no baseline image found (404)
+      return null
+    }
+  },
+
   // Get images by transformer ID
   async getByTransformerId(transformerId: string): Promise<BackendImage[]> {
     return apiCall<BackendImage[]>(`/images?transformerId=${transformerId}`)

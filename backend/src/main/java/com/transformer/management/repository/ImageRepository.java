@@ -22,6 +22,12 @@ public interface ImageRepository extends JpaRepository<Image, UUID> {
     // Find images by transformer and image type
     List<Image> findByTransformerIdAndImageType(UUID transformerId, String imageType);
     
+    // Find the most recent baseline image by transformer (sorted by capturedAt descending)
+    List<Image> findByTransformerIdAndImageTypeOrderByCapturedAtDesc(UUID transformerId, String imageType);
+    
+    // Find baseline image by inspection ID
+    List<Image> findByInspectionIdAndImageType(UUID inspectionId, String imageType);
+    
     // Find images by transformer and inspection
     List<Image> findByTransformerIdAndInspectionId(UUID transformerId, UUID inspectionId);
 }

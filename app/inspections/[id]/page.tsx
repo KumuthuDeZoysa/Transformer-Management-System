@@ -135,9 +135,9 @@ export default function InspectionDetailPage() {
         try {
           // Use backend API instead of Next.js API
           if (backendConnected) {
-            // Get baseline image using dedicated endpoint
-            const baselineImage = await backendApi.images.getBaselineImage(currentInspection.transformer_id)
-            console.log('🖼️ Loaded baseline image:', baselineImage)
+            // Get baseline image for THIS SPECIFIC INSPECTION (not just transformer)
+            const baselineImage = await backendApi.images.getBaselineImageByInspection(inspectionId)
+            console.log('🖼️ Loaded baseline image for inspection:', baselineImage)
             if (baselineImage) {
               console.log('  - Raw URL:', baselineImage.url)
               console.log('  - Full URL:', getImageUrl(baselineImage.url))
@@ -218,8 +218,8 @@ export default function InspectionDetailPage() {
 
       if (backendConnected) {
         // Use backend API with dedicated endpoints
-        // Get baseline image using dedicated endpoint
-        const baselineImage = await backendApi.images.getBaselineImage(inspection.transformer_id)
+        // Get baseline image for THIS SPECIFIC INSPECTION
+        const baselineImage = await backendApi.images.getBaselineImageByInspection(inspectionId)
         if (baselineImage) {
           setBaselineImages([baselineImage])
         } else {
@@ -247,9 +247,10 @@ export default function InspectionDetailPage() {
           const allImages = imagesData.items || []
           
           // Separate baseline and maintenance images using label-based logic
-          const baseline = allImages.filter((img: any) => 
-            img.label && img.label.includes('[baseline]')
-          )
+          const baseline = allImages
+            .filter((img: any) => img.label && img.label.includes('[baseline]'))
+            .sort((a: any, b: any) => new Date(b.capturedAt || b.uploadedAt || 0).getTime() - new Date(a.capturedAt || a.uploadedAt || 0).getTime())
+          
           const maintenance = allImages.filter((img: any) => 
             img.label && (
               img.label.includes('[maintenance]') && (
@@ -307,7 +308,7 @@ export default function InspectionDetailPage() {
           uploaderName,
           environmentalCondition as 'sunny' | 'cloudy' | 'rainy',
           comments || undefined,
-          imageType === "maintenance" ? inspectionId : undefined,
+          inspectionId, // IMPORTANT: Link both baseline AND maintenance to this inspection
           `${selectedFile.name} - ${imageType} by ${uploaderName}`
         )
       } else {
@@ -583,8 +584,7 @@ export default function InspectionDetailPage() {
 
                   <div className="space-y-2">
                     <Label className="font-serif">Baseline Image File *</Label>
-                    <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer" 
-                         onClick={() => document.getElementById('baseline-file-upload')?.click()}>
+                    <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors">
                       <ImageIcon className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
                       <div className="space-y-1">
                         {selectedFile && imageType === "baseline" ? (
