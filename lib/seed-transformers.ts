@@ -4,13 +4,13 @@
 import { createBrowserClient } from "@/lib/supabase/client"
 
 function randomId() {
-  return 'DUMMY-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+  return 'TP-' + Math.random().toString(36).substring(2, 8).toUpperCase()
 }
 function randomPoleNo() {
   return 'POLE-' + Math.floor(Math.random() * 1000)
 }
 function randomRegion() {
-  const regions = ['Maharagama', 'Nugegoda', 'Colombo', 'Dehiwala', 'Mount Lavinia', 'Ratmalana', 'Moratuwa', 'Panadura', 'Kalutara']
+  const regions = ['Maharagama', 'Nugegoda', 'Colombo', 'Dehiwala', 'Mount Lavinia', 'Ratmalana', 'Moratuwa', 'Panadura', 'Kalutara','Kesbewa', 'Homagama', 'Kottawa', 'Piliyandala', 'Boralesgamuwa']
   return regions[Math.floor(Math.random() * regions.length)]
 }
 function randomType() {

@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AlertCircle, Save, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Transformer } from "@/lib/types"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 // Form data interface - basic transformer data without metadata
 export interface TransformerFormData {
@@ -23,9 +24,10 @@ export interface TransformerFormData {
 }
 
 interface TransformerFormProps {
+  open: boolean
+  onClose: () => void
   transformer?: Transformer
   onSubmit: (transformer: TransformerFormData) => void
-  onCancel: () => void
   existingTransformers: Transformer[]
 }
 
@@ -39,11 +41,16 @@ const regions = [
   "Moratuwa",
   "Panadura",
   "Kalutara",
+  "Kesbewa",
+  "Homagama",
+  "Kottawa",
+  "Piliyandala",
+  "Boralesgamuwa"
 ]
 
 const transformerTypes: ("Distribution" | "Bulk")[] = ["Distribution", "Bulk"]
 
-export function TransformerForm({ transformer, onSubmit, onCancel, existingTransformers }: TransformerFormProps) {
+export function TransformerForm({ open, onClose, transformer, onSubmit, existingTransformers }: TransformerFormProps) {
   const [formData, setFormData] = useState<TransformerFormData>({
     id: "",
     poleNo: "",
@@ -63,7 +70,7 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
       const capacityValue = transformer.capacity?.replace(/ kVA$/i, '').trim() || ''
       
       setFormData({
-        id: transformer.id,
+        id: transformer.code || "", // Use code (AS-2244) not id (UUID)
         poleNo: transformer.poleNo || "",
         region: transformer.region || "",
         type: (transformer.type as "Distribution" | "Bulk") || "Distribution",
@@ -159,14 +166,15 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
   }
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
-      <CardHeader>
-        <CardTitle className="font-sans">{isEditing ? "Edit Transformer" : "Add New Transformer"}</CardTitle>
-        <CardDescription className="font-serif">
-          {isEditing ? "Update transformer information" : "Enter transformer details to add to the system"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle className="font-sans text-2xl">{isEditing ? "Edit Transformer" : "Add New Transformer"}</DialogTitle>
+          <DialogDescription className="font-serif">
+            {isEditing ? "Update transformer information" : "Enter transformer details to add to the system"}
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[calc(90vh-120px)] pr-4">
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Transformer No */}
@@ -316,7 +324,7 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
             <Button
               type="button"
               variant="outline"
-              onClick={onCancel}
+              onClick={onClose}
               disabled={isSubmitting}
               className="font-serif bg-transparent cursor-pointer hover:bg-accent transition-colors"
             >
@@ -333,8 +341,9 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   )
 }
 
