@@ -11,6 +11,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Search, Eye, Download, ArrowLeft, Upload, X, Calendar, User, MessageSquare, Camera, RefreshCw } from "lucide-react"
 import Link from "next/link"
 
+// Helper function to construct full image URL from backend
+const getImageUrl = (url: string): string => {
+  if (!url) return ''
+  // If already a full URL, return as is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+  // If relative path, prepend backend URL
+  const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
+  return `${backendBaseUrl}${url.startsWith('/') ? url : '/' + url}`
+}
+
 // Types from our minimal DB/API
 type DbImage = {
   id: string
@@ -85,8 +97,8 @@ export default function GalleryPage() {
       uploader: "System",
           comments: label || undefined,
       status: (t?.status as any) || "Normal",
-          thumbnail: img.url,
-          fullImage: img.url,
+          thumbnail: getImageUrl(img.url),
+          fullImage: getImageUrl(img.url),
         }
       })
 

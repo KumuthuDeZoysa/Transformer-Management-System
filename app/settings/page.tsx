@@ -10,16 +10,66 @@ import { Separator } from "@/components/ui/separator"
 import { ArrowLeft, Save } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect } from "react"
-import { fetchTransformersFromDb } from "@/lib/db-api"
+import backendApi, { type BackendTransformer } from "@/lib/backend-api"
+import { transformerApi } from "@/lib/mock-api"
 import { seedTransformers } from "@/lib/seed-transformers"
 
 export default function SettingsPage() {
   const [transformers, setTransformers] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [seeded, setSeeded] = useState(false)
+  const [backendConnected, setBackendConnected] = useState(false)
 
   useEffect(() => {
-    fetchTransformersFromDb().then(setTransformers)
+    const loadTransformers = async () => {
+      try {
+        // Check if backend is available
+        const healthCheck = await backendApi.health.checkBackendStatus()
+        setBackendConnected(healthCheck.status === 'healthy')
+
+        if (healthCheck.status === 'healthy') {
+          console.log('🚀 Loading transformers from Spring Boot backend...')
+          const backendTransformers = await backendApi.transformers.getAll()
+          // Convert to display format
+          const displayData = backendTransformers.map((t: BackendTransformer) => ({
+            id: t.id,
+            code: t.code,
+            pole_no: t.poleNo,
+            region: t.region,
+            type: t.type,
+            capacity: t.capacity,
+            location: t.location,
+            status: t.status,
+            last_inspection: t.lastInspection,
+            created_at: t.createdAt,
+            updated_at: t.updatedAt,
+          }))
+          setTransformers(displayData)
+        } else {
+          console.log('📡 Backend unavailable, using mock data...')
+          const mockTransformers = await transformerApi.getAll()
+          // Convert mock data to display format
+          const displayData = mockTransformers.map((t) => ({
+            id: t.id,
+            code: t.id,
+            pole_no: t.poleNo,
+            region: t.region,
+            type: t.type,
+            capacity: t.capacity,
+            location: t.location,
+            status: t.status,
+            last_inspection: t.lastInspection,
+            created_at: t.createdAt,
+            updated_at: t.updatedAt,
+          }))
+          setTransformers(displayData)
+        }
+      } catch (error) {
+        console.error('Failed to load transformers:', error)
+      }
+    }
+    
+    loadTransformers()
   }, [seeded])
 
   async function handleSeed() {

@@ -22,7 +22,7 @@ public class Inspection {
     @Column(columnDefinition = "UUID DEFAULT gen_random_uuid()")
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "transformer_id", nullable = false)
     private Transformer transformer;
 

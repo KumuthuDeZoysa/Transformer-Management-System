@@ -10,7 +10,7 @@ import Link from "next/link"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { TransformerForm } from "@/components/forms/transformer-form"
-import { fetchTransformersFromDb } from "@/lib/db-api"
+import backendApi, { type BackendTransformer } from "@/lib/backend-api"
 import { transformerApi, type Transformer } from "@/lib/mock-api"
 
 // Form data interface for the transformer form
@@ -29,38 +29,55 @@ export default function EditTransformerPage() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingTransformer, setEditingTransformer] = useState<Transformer | undefined>()
+  const [backendConnected, setBackendConnected] = useState(false)
+  const [dataSource, setDataSource] = useState<'backend' | 'mock'>('backend')
+
+  // Helper function to convert backend transformer to frontend format
+  const convertBackendTransformer = (bt: BackendTransformer): Transformer => ({
+    id: bt.code || bt.id,
+    poleNo: bt.poleNo || "",
+    region: bt.region || "",
+    type: (bt.type as any) || "Distribution",
+    capacity: bt.capacity || "",
+    location: bt.location || "",
+    status: bt.status || "Normal",
+    lastInspection: bt.lastInspection || "Not inspected",
+    createdAt: bt.createdAt,
+    updatedAt: bt.updatedAt,
+  })
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Try DB first
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          if (dbRows.length > 0) {
-            const mapped: Transformer[] = dbRows.map((r) => ({
-              id: r.code || r.id,
-              poleNo: r.pole_no || "",
-              region: r.region || "",
-              type: (r.type as any) || "Distribution",
-              capacity: r.capacity || "",
-              location: r.location || "",
-              status: (r.status as any) || "Normal",
-              lastInspection: r.last_inspection || "Not inspected",
-              createdAt: r.created_at,
-              updatedAt: r.updated_at,
-            }))
-            setTransformersData(mapped)
-            return
-          }
-        } catch (e) {
-          // fall back to mock below
+        // First, check if backend is available
+        const healthCheck = await backendApi.health.checkBackendStatus()
+        setBackendConnected(healthCheck.status === 'healthy')
+
+        if (healthCheck.status === 'healthy') {
+          // Use Spring Boot backend
+          console.log('🚀 Loading transformers from Spring Boot backend...')
+          const backendTransformers = await backendApi.transformers.getAll()
+          const converted = backendTransformers.map(convertBackendTransformer)
+          setTransformersData(converted)
+          setDataSource('backend')
+          return
         }
 
-        // Fallback to mock
+        // Fallback to mock data
+        console.log('📡 Backend unavailable, falling back to mock data...')
         const transformers = await transformerApi.getAll()
         setTransformersData(transformers)
+        setDataSource('mock')
       } catch (error) {
         console.error("Failed to load data:", error)
+        // Final fallback to mock
+        try {
+          const transformers = await transformerApi.getAll()
+          setTransformersData(transformers)
+          setDataSource('mock')
+        } catch (mockError) {
+          console.error("Mock data also failed:", mockError)
+        }
       } finally {
         setLoading(false)
       }
@@ -71,105 +88,75 @@ export default function EditTransformerPage() {
   const handleFormSubmit = async (formData: TransformerFormData) => {
     try {
       if (editingTransformer) {
-        // Update existing
-        const res = await fetch(`/api/transformers/${editingTransformer.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // Update existing transformer
+        if (backendConnected) {
+          console.log('🔄 Updating transformer via backend API...')
+          const updated = await backendApi.transformers.update(editingTransformer.id, {
+            code: formData.id,
             poleNo: formData.poleNo,
             region: formData.region,
             type: formData.type,
             capacity: formData.capacity,
             location: formData.location,
-          }),
-        })
-        const updated = await res.json()
-        if (!res.ok) throw new Error(updated?.error || 'Update failed')
-        
-        // Refresh list from DB
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          const mapped: Transformer[] = dbRows.map((r) => ({
-            id: r.code || r.id,
-            poleNo: r.pole_no || "",
-            region: r.region || "",
-            type: (r.type as any) || "Distribution",
-            capacity: r.capacity || "",
-            location: r.location || "",
-            status: (r.status as any) || "Normal",
-            lastInspection: r.last_inspection || "Not inspected",
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-          setTransformersData(mapped)
-        } catch {
-          // fallback to local update
-          const updatedTransformer: Transformer = {
-            id: updated.code || updated.id,
-            poleNo: updated.pole_no || '',
-            region: updated.region || '',
-            type: (updated.type as any) || 'Distribution',
-            capacity: updated.capacity || '',
-            location: updated.location || '',
-            status: (updated.status as any) || 'Normal',
-            lastInspection: updated.last_inspection || editingTransformer.lastInspection,
-            createdAt: updated.created_at || editingTransformer.createdAt,
-            updatedAt: updated.updated_at || new Date().toISOString(),
-          }
-          setTransformersData((prev) => prev.map((t) => (t.id === editingTransformer.id ? updatedTransformer : t)))
+          })
+          
+          // Refresh the list
+          const backendTransformers = await backendApi.transformers.getAll()
+          const converted = backendTransformers.map(convertBackendTransformer)
+          setTransformersData(converted)
+        } else {
+          // Fallback: Update using local mock API
+          console.log('🔄 Updating transformer via mock API...')
+          await transformerApi.update(editingTransformer.id, {
+            poleNo: formData.poleNo,
+            region: formData.region,
+            type: formData.type,
+            capacity: formData.capacity,
+            location: formData.location,
+          })
+          const transformers = await transformerApi.getAll()
+          setTransformersData(transformers)
         }
       } else {
-        // Create new
-        const res = await fetch('/api/transformers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // Create new transformer
+        if (backendConnected) {
+          console.log('➕ Creating transformer via backend API...')
+          await backendApi.transformers.create({
+            code: formData.id,
+            poleNo: formData.poleNo,
+            region: formData.region,
+            type: formData.type,
+            capacity: formData.capacity,
+            location: formData.location,
+            status: 'Normal',
+          })
+          
+          // Refresh the list
+          const backendTransformers = await backendApi.transformers.getAll()
+          const converted = backendTransformers.map(convertBackendTransformer)
+          setTransformersData(converted)
+        } else {
+          // Fallback: Create using local mock API
+          console.log('➕ Creating transformer via mock API...')
+          await transformerApi.create({
             id: formData.id,
             poleNo: formData.poleNo,
             region: formData.region,
             type: formData.type,
             capacity: formData.capacity,
             location: formData.location,
-          }),
-        })
-        const created = await res.json()
-        if (!res.ok) throw new Error(created?.error || 'Create failed')
-        
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          const mapped: Transformer[] = dbRows.map((r) => ({
-            id: r.code || r.id,
-            poleNo: r.pole_no || "",
-            region: r.region || "",
-            type: (r.type as any) || "Distribution",
-            capacity: r.capacity || "",
-            location: r.location || "",
-            status: (r.status as any) || "Normal",
-            lastInspection: r.last_inspection || "Not inspected",
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-          setTransformersData(mapped)
-        } catch {
-          const newTransformer: Transformer = {
-            id: created.code || created.id,
-            poleNo: created.pole_no || '',
-            region: created.region || '',
-            type: (created.type as any) || 'Distribution',
-            capacity: created.capacity || '',
-            location: created.location || '',
-            status: (created.status as any) || 'Normal',
-            lastInspection: created.last_inspection || 'Not inspected',
-            createdAt: created.created_at || new Date().toISOString(),
-            updatedAt: created.updated_at || new Date().toISOString(),
-          }
-          setTransformersData((prev) => [...prev, newTransformer])
+            status: 'Normal',
+            lastInspection: 'Not inspected',
+          })
+          const transformers = await transformerApi.getAll()
+          setTransformersData(transformers)
         }
       }
       setShowForm(false)
       setEditingTransformer(undefined)
     } catch (error) {
       console.error("Failed to save transformer:", error)
+      alert(`Failed to save transformer: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -180,26 +167,17 @@ export default function EditTransformerPage() {
 
   const handleEdit = async (transformer: Transformer) => {
     try {
-      const res = await fetch(`/api/transformers/${transformer.id}`)
-      if (res.ok) {
-        const t = await res.json()
-        const mapped: Transformer = {
-          id: t.code || t.id,
-          poleNo: t.pole_no || "",
-          region: t.region || "",
-          type: (t.type as any) || "Distribution",
-          capacity: t.capacity || "",
-          location: t.location || "",
-          status: (t.status as any) || "Normal",
-          lastInspection: t.last_inspection || transformer.lastInspection,
-          createdAt: t.created_at || transformer.createdAt,
-          updatedAt: t.updated_at || transformer.updatedAt,
-        }
-        setEditingTransformer(mapped)
+      if (backendConnected) {
+        console.log('🔍 Fetching transformer details from backend...')
+        const backendTransformer = await backendApi.transformers.getById(transformer.id)
+        const converted = convertBackendTransformer(backendTransformer)
+        setEditingTransformer(converted)
       } else {
+        console.log('🔍 Using local transformer data...')
         setEditingTransformer(transformer)
       }
-    } catch {
+    } catch (error) {
+      console.error('Failed to fetch transformer details:', error)
       setEditingTransformer(transformer)
     }
     setShowForm(true)
@@ -208,31 +186,23 @@ export default function EditTransformerPage() {
   const handleDelete = async (transformerId: string) => {
     if (confirm("Are you sure you want to delete this transformer?")) {
       try {
-        const res = await fetch(`/api/transformers/${transformerId}`, { method: 'DELETE' })
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}))
-          throw new Error(j?.error || 'Delete failed')
-        }
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          const mapped: Transformer[] = dbRows.map((r) => ({
-            id: r.code || r.id,
-            poleNo: r.pole_no || "",
-            region: r.region || "",
-            type: (r.type as any) || "Distribution",
-            capacity: r.capacity || "",
-            location: r.location || "",
-            status: (r.status as any) || "Normal",
-            lastInspection: r.last_inspection || "Not inspected",
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-          setTransformersData(mapped)
-        } catch {
-          setTransformersData((prev) => prev.filter((t) => t.id !== transformerId))
+        if (backendConnected) {
+          console.log('🗑️ Deleting transformer via backend API...')
+          await backendApi.transformers.delete(transformerId)
+          
+          // Refresh the list
+          const backendTransformers = await backendApi.transformers.getAll()
+          const converted = backendTransformers.map(convertBackendTransformer)
+          setTransformersData(converted)
+        } else {
+          console.log('🗑️ Deleting transformer via mock API...')
+          await transformerApi.delete(transformerId)
+          const transformers = await transformerApi.getAll()
+          setTransformersData(transformers)
         }
       } catch (error) {
         console.error("Failed to delete transformer:", error)
+        alert(`Failed to delete transformer: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
   }
