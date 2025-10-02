@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { fetchInspections, updateInspection, type DbInspection } from '@/lib/inspections-api'
 import backendApi, { type BackendTransformer, type BackendInspection } from '@/lib/backend-api'
 import { transformerApi } from '@/lib/mock-api'
+import { AnomalyViewer } from '@/components/anomaly-viewer'
 
 // Helper function to construct full image URL from backend
 const getImageUrl = (url: string): string => {
@@ -63,14 +64,19 @@ export default function InspectionDetailPage() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [imageUploads, setImageUploads] = useState<ImageUpload[]>([])
   const [showReplaceBaselineForm, setShowReplaceBaselineForm] = useState(false)
+  
+  // Anomaly detection states
+  const [showAnomalyAnalysis, setShowAnomalyAnalysis] = useState(false)
 
   useEffect(() => {
     const loadInspection = async () => {
       try {
         setLoading(true)
+        console.log('🔄 [Page Load] Loading inspection:', inspectionId)
         
         // Check if backend is available
         const healthCheck = await backendApi.health.checkBackendStatus()
+        console.log('🏥 [Backend Health]:', healthCheck.status)
         setBackendConnected(healthCheck.status === 'healthy')
 
         // For now, we'll continue using the existing inspections API until it's updated
@@ -133,8 +139,15 @@ export default function InspectionDetailPage() {
 
         // Load existing images for this transformer and inspection
         try {
+          console.log('📸 [Image Loading] Starting to load images...')
+          console.log('   - Backend Connected:', backendConnected)
+          console.log('   - Inspection ID:', inspectionId)
+          console.log('   - Transformer ID:', currentInspection.transformer_id)
+          
           // Use backend API instead of Next.js API
           if (backendConnected) {
+            console.log('✅ Using Spring Boot backend for image loading')
+            
             // Get baseline image for THIS SPECIFIC INSPECTION (not just transformer)
             const baselineImage = await backendApi.images.getBaselineImageByInspection(inspectionId)
             console.log('🖼️ Loaded baseline image for inspection:', baselineImage)
@@ -143,6 +156,7 @@ export default function InspectionDetailPage() {
               console.log('  - Full URL:', getImageUrl(baselineImage.url))
               setBaselineImages([baselineImage])
             } else {
+              console.log('⚠️ No baseline image found for this inspection')
               setBaselineImages([])
             }
             
@@ -152,6 +166,7 @@ export default function InspectionDetailPage() {
               'maintenance'
             )
             console.log('🖼️ Loaded maintenance images:', maintenanceImages)
+            console.log('   - Total maintenance images for transformer:', maintenanceImages.length)
             
             // Filter maintenance images for this specific inspection
             const inspectionMaintenanceImages = maintenanceImages.filter((img: any) => 
@@ -159,6 +174,7 @@ export default function InspectionDetailPage() {
               (currentInspection.inspection_no && img.label && img.label.includes(currentInspection.inspection_no))
             )
             console.log('🖼️ Filtered maintenance images for this inspection:', inspectionMaintenanceImages)
+            console.log('   - Maintenance images for THIS inspection:', inspectionMaintenanceImages.length)
             if (inspectionMaintenanceImages.length > 0) {
               console.log('  - First image raw URL:', inspectionMaintenanceImages[0].url)
               console.log('  - First image full URL:', getImageUrl(inspectionMaintenanceImages[0].url))
@@ -838,7 +854,7 @@ export default function InspectionDetailPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-sans font-semibold text-sm">Current</h4>
-                    <Badge variant="destructive" className="text-xs">Anomaly Detected</Badge>
+                    <Badge variant="secondary" className="text-xs">Maintenance</Badge>
                   </div>
                   <div className="relative aspect-[4/3] bg-muted rounded-lg overflow-hidden border">
                     <img
@@ -853,9 +869,6 @@ export default function InspectionDetailPage() {
                     <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-serif">
                       {maintenanceImages[maintenanceImages.length - 1].capturedAt ? new Date(maintenanceImages[maintenanceImages.length - 1].capturedAt).toLocaleDateString() : 'Invalid Date'} {maintenanceImages[maintenanceImages.length - 1].capturedAt ? new Date(maintenanceImages[maintenanceImages.length - 1].capturedAt).toLocaleTimeString() : 'Invalid Date'}
                     </div>
-                    {/* Anomaly indicators */}
-                    <div className="absolute top-4 right-4 w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-                    <div className="absolute top-1/3 left-1/2 w-16 h-16 border-2 border-red-500 rounded transform -translate-x-1/2 -translate-y-1/2"></div>
                   </div>
                   <div className="text-xs text-muted-foreground font-serif">
                     {maintenanceImages[maintenanceImages.length - 1].environmentalCondition || 'Unknown'} conditions • {maintenanceImages[maintenanceImages.length - 1].imageType ? maintenanceImages[maintenanceImages.length - 1].imageType.charAt(0).toUpperCase() + maintenanceImages[maintenanceImages.length - 1].imageType.slice(1) : 'Unknown type'} • Inspection #{maintenanceImages[maintenanceImages.length - 1].inspectionNo || inspection?.inspection_no || 'null'}{maintenanceImages[maintenanceImages.length - 1].comments ? ` • ${maintenanceImages[maintenanceImages.length - 1].comments}` : ''}
@@ -863,46 +876,77 @@ export default function InspectionDetailPage() {
                 </div>
               </div>
 
-              {/* Analysis Summary */}
-              <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center mt-0.5">
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  </div>
-                  <div className="flex-1">
-                    <h5 className="font-sans font-semibold text-sm text-red-800 mb-1">Temperature Anomaly Detected</h5>
-                    <p className="text-sm text-red-700 font-serif mb-2">
-                      Significant temperature increase detected compared to baseline. Hot spot identified in the upper section of the transformer.
-                    </p>
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-serif">
-                        Δ Temperature: +15°C
-                      </span>
-                      <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-serif">
-                        Risk Level: High
-                      </span>
-                      <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-serif">
-                        Action Required: Immediate
-                      </span>
+              {/* Note: Analysis results will appear in the Anomaly Detection section below */}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Anomaly Detection Analysis Section */}
+        {baselineImages.length > 0 && maintenanceImages.length > 0 && (
+          <Card className="col-span-full">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="font-sans flex items-center gap-2">
+                    <ImageIcon className="h-5 w-5" />
+                    Anomaly Detection & Analysis
+                  </CardTitle>
+                  <CardDescription className="font-serif">
+                    AI-powered thermal image comparison with automatic anomaly marking
+                  </CardDescription>
+                </div>
+                <Button
+                  variant={showAnomalyAnalysis ? "outline" : "default"}
+                  size="sm"
+                  onClick={() => setShowAnomalyAnalysis(!showAnomalyAnalysis)}
+                  className="cursor-pointer hover:bg-accent transition-colors"
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  {showAnomalyAnalysis ? "Hide Analysis" : "Analyze Images"}
+                </Button>
+              </div>
+            </CardHeader>
+            {showAnomalyAnalysis && (
+              <CardContent>
+                <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center mt-0.5">
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="font-sans font-semibold text-sm text-blue-800 dark:text-blue-200 mb-1">
+                        Automatic Anomaly Marking
+                      </h5>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 font-serif mb-2">
+                        Images are automatically annotated with color-coded overlays and severity scores:
+                      </p>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-serif flex items-center gap-1">
+                          <div className="w-3 h-3 rounded bg-red-500"></div>
+                          Red: High Severity (≥0.8)
+                        </span>
+                        <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded font-serif flex items-center gap-1">
+                          <div className="w-3 h-3 rounded bg-orange-500"></div>
+                          Orange: Medium Severity (≥0.5)
+                        </span>
+                        <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-serif flex items-center gap-1">
+                          <div className="w-3 h-3 rounded bg-yellow-500"></div>
+                          Yellow: Low Severity (&lt;0.5)
+                        </span>
+                      </div>
+                      <p className="text-xs text-blue-600 dark:text-blue-400 font-serif mt-2">
+                        💡 Hover over any bounding box to see detailed metadata: coordinates, size, and severity score
+                      </p>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 mt-4">
-                <Button variant="outline" size="sm" className="font-serif">
-                  <Eye className="h-4 w-4 mr-2" />
-                  View Full Analysis
-                </Button>
-                <Button variant="outline" size="sm" className="font-serif">
-                  Export Report
-                </Button>
-                <Button variant="outline" size="sm" className="font-serif">
-                  Schedule Maintenance
-                </Button>
-              </div>
-            </CardContent>
+                <AnomalyViewer
+                  baselineUrl={getImageUrl(baselineImages[0].url)}
+                  maintenanceUrl={getImageUrl(maintenanceImages[maintenanceImages.length - 1].url)}
+                />
+              </CardContent>
+            )}
           </Card>
         )}
 
