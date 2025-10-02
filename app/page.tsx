@@ -9,34 +9,14 @@ import { DataTable } from "@/components/ui/data-table"
 import { StatsCard } from "@/components/ui/stats-card"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { AlertTriangle, CheckCircle, Clock, Plus, Eye, Edit, Trash2, Search, Zap, Activity, Wifi, WifiOff } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { TransformerForm } from "@/components/forms/transformer-form"
 import type { TransformerFormData } from "@/components/forms/transformer-form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-
-// Import backend API instead of mock API
-import backendApi, { type BackendTransformer } from "@/lib/backend-api"
-// Keep fallback to mock API and Supabase for comparison
-import { transformerApi as mockApi, statsApi } from "@/lib/mock-api"
-import { fetchTransformersFromDb } from "@/lib/db-api"
-
-// Type for unified transformer interface
-interface Transformer {
-  id: string
-  poleNo: string
-  region: string
-  type: "Distribution" | "Bulk"
-  capacity: string
-  location: string
-  status: "Normal" | "Warning" | "Critical"
-  lastInspection: string
-  createdAt: string
-  updatedAt: string
-}
-
-// (Removed duplicate TransformerFormData interface, now imported from the form)
+import backendApi from "@/lib/backend-api"
+import { type Transformer, type DashboardStats } from "@/lib/types"
 
 const recentAlerts = [
   {
@@ -62,448 +42,239 @@ export default function TransformersPage() {
   const router = useRouter()
   const [transformersData, setTransformersData] = useState<Transformer[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [regionFilter, setRegionFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
   const [showForm, setShowForm] = useState(false)
   const [editingTransformer, setEditingTransformer] = useState<Transformer | undefined>()
-  const [stats, setStats] = useState<any>(null)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
-  const [backendConnected, setBackendConnected] = useState<boolean | null>(null)
-  const [dataSource, setDataSource] = useState<'backend' | 'supabase' | 'mock'>('backend')
+  const [mounted, setMounted] = useState(false)
 
-  // Helper function to convert BackendTransformer to Transformer
-  const convertBackendTransformer = (bt: BackendTransformer): Transformer => ({
-    id: bt.code || bt.id,
-    poleNo: bt.poleNo || "",
-    region: bt.region || "",
-    type: (bt.type as any) || "Distribution",
-    capacity: bt.capacity || "",
-    location: bt.location || "",
-    status: bt.status || "Normal",
-    lastInspection: bt.lastInspection || "Not inspected",
-    createdAt: bt.createdAt,
-    updatedAt: bt.updatedAt,
-  })
-
+  // Handle client-side mounting to prevent hydration errors
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        // First, check if backend is available
-        const healthCheck = await backendApi.health.checkBackendStatus()
-        setBackendConnected(healthCheck.status === 'healthy')
-
-        if (healthCheck.status === 'healthy') {
-          // Use Spring Boot backend
-          console.log('🚀 Loading data from Spring Boot backend...')
-          const backendTransformers = await backendApi.transformers.getAll()
-          const converted = backendTransformers.map(convertBackendTransformer)
-          setTransformersData(converted)
-          setDataSource('backend')
-          
-          // Calculate stats from backend data
-          const normal = converted.filter((t) => t.status === "Normal").length
-          const warning = converted.filter((t) => t.status === "Warning").length
-          const critical = converted.filter((t) => t.status === "Critical").length
-          setStats({
-            totalTransformers: converted.length,
-            pendingInspections: warning + critical,
-            criticalAlerts: critical,
-            inspectionsToday: 0,
-          })
-          return
-        }
-
-        // Fallback to Supabase
-        console.log('📡 Backend unavailable, falling back to Supabase...')
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          if (dbRows.length > 0) {
-            const mapped: Transformer[] = dbRows.map((r) => ({
-              id: r.code || r.id,
-              poleNo: r.pole_no || "",
-              region: r.region || "",
-              type: (r.type as any) || "Distribution",
-              capacity: r.capacity || "",
-              location: r.location || "",
-              status: (r.status as any) || "Normal",
-              lastInspection: r.last_inspection || "Not inspected",
-              createdAt: r.created_at,
-              updatedAt: r.updated_at,
-            }))
-            setTransformersData(mapped)
-            setDataSource('supabase')
-            
-            // Simple stats from DB rows
-            const normal = mapped.filter((t) => t.status === "Normal").length
-            const warning = mapped.filter((t) => t.status === "Warning").length
-            const critical = mapped.filter((t) => t.status === "Critical").length
-            setStats({
-              totalTransformers: mapped.length,
-              pendingInspections: warning + critical,
-              criticalAlerts: critical,
-              inspectionsToday: 0,
-            })
-            return
-          }
-        } catch (e) {
-          console.warn('Supabase also failed, falling back to mock data')
-        }
-
-        // Final fallback to mock data
-        console.log('🎭 Using mock data as final fallback...')
-        const [transformers, dashboardStats] = await Promise.all([
-          mockApi.getAll(),
-          statsApi.getDashboardStats(),
-        ])
-        setTransformersData(transformers)
-        setStats(dashboardStats)
-        setDataSource('mock')
-      } catch (error) {
-        console.error("Failed to load data:", error)
-        setBackendConnected(false)
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadData()
+    setMounted(true)
   }, [])
 
-  const filteredTransformers = transformersData.filter((transformer) => {
-    const matchesSearch =
-      transformer.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transformer.location.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesRegion = regionFilter === "all" || transformer.region === regionFilter
-    const matchesType = typeFilter === "all" || transformer.type === typeFilter
-
-    return matchesSearch && matchesRegion && matchesType
-  })
-
-  const uniqueRegions = [...new Set(transformersData.map((t) => t.region))]
-  const uniqueTypes = [...new Set(transformersData.map((t) => t.type))]
-
-  const handleFormSubmit = async (formData: TransformerFormData) => {
-    try {
-      if (editingTransformer) {
-        // Update existing transformer
-        if (dataSource === 'backend' && backendConnected) {
-          // Use Spring Boot backend
-          const updated = await backendApi.transformers.update(editingTransformer.id, {
-            code: formData.id,
-            poleNo: formData.poleNo,
-            region: formData.region,
-            type: formData.type,
-            capacity: formData.capacity,
-            location: formData.location,
-          })
-          const convertedUpdated = convertBackendTransformer(updated)
-          setTransformersData((prev) => prev.map((t) => (t.id === editingTransformer.id ? convertedUpdated : t)))
-        } else {
-          // Fallback to Supabase API
-          const res = await fetch(`/api/transformers/${editingTransformer.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              poleNo: formData.poleNo,
-              region: formData.region,
-              type: formData.type,
-              capacity: formData.capacity,
-              location: formData.location,
-            }),
-          })
-          const updated = await res.json()
-          if (!res.ok) throw new Error(updated?.error || 'Update failed')
+  // Load transformers data from backend
+  useEffect(() => {
+    let cancelled = false
+    const loadData = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const transformers = await backendApi.transformers.getAll()
+        if (!cancelled) {
+          setTransformersData(transformers)
           
-          // Refresh list from DB
-          try {
-            const dbRows = await fetchTransformersFromDb()
-            const mapped: Transformer[] = dbRows.map((r) => ({
-              id: r.code || r.id,
-              poleNo: r.pole_no || "",
-              region: r.region || "",
-              type: (r.type as any) || "Distribution",
-              capacity: r.capacity || "",
-              location: r.location || "",
-              status: (r.status as any) || "Normal",
-              lastInspection: r.last_inspection || "Not inspected",
-              createdAt: r.created_at,
-              updatedAt: r.updated_at,
-            }))
-            setTransformersData(mapped)
-          } catch {
-            // fallback to local update if DB fetch fails
-            const updatedTransformer: Transformer = {
-              id: updated.code || updated.id,
-              poleNo: updated.pole_no || '',
-              region: updated.region || '',
-              type: (updated.type as any) || 'Distribution',
-              capacity: updated.capacity || '',
-              location: updated.location || '',
-              status: (updated.status as any) || 'Normal',
-              lastInspection: updated.last_inspection || editingTransformer.lastInspection,
-              createdAt: updated.created_at || editingTransformer.createdAt,
-              updatedAt: updated.updated_at || new Date().toISOString(),
+          // Calculate stats from loaded data
+          const normal = transformers.filter(t => t.status === "Normal").length
+          const warning = transformers.filter(t => t.status === "Warning").length
+          const critical = transformers.filter(t => t.status === "Critical").length
+          
+          setStats({
+            totalTransformers: transformers.length,
+            operationalTransformers: normal + warning,
+            pendingInspections: warning + critical,
+            criticalAlerts: critical,
+            inspectionsToday: 0, // Will be set from backend later
+            maintenanceCompleted: 0, // Will be set from backend later
+            statusDistribution: {
+              normal,
+              warning,
+              critical
             }
-            setTransformersData((prev) => prev.map((t) => (t.id === editingTransformer.id ? updatedTransformer : t)))
-          }
+          })
         }
-      } else {
-        // Create new transformer
-        if (dataSource === 'backend' && backendConnected) {
-          // Use Spring Boot backend
-          const created = await backendApi.transformers.create({
-            code: formData.id,
-            poleNo: formData.poleNo,
-            region: formData.region,
-            type: formData.type,
-            capacity: formData.capacity,
-            location: formData.location,
-          })
-          const convertedCreated = convertBackendTransformer(created)
-          setTransformersData((prev) => [...prev, convertedCreated])
-        } else {
-          // Fallback to Supabase API
-          const res = await fetch('/api/transformers', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: formData.id,
-              poleNo: formData.poleNo,
-              region: formData.region,
-              type: formData.type,
-              capacity: formData.capacity,
-              location: formData.location,
-            }),
-          })
-          const created = await res.json()
-          if (!res.ok) throw new Error(created?.error || 'Create failed')
-          
-          try {
-            const dbRows = await fetchTransformersFromDb()
-            const mapped: Transformer[] = dbRows.map((r) => ({
-              id: r.code || r.id,
-              poleNo: r.pole_no || "",
-              region: r.region || "",
-              type: (r.type as any) || "Distribution",
-              capacity: r.capacity || "",
-              location: r.location || "",
-              status: (r.status as any) || "Normal",
-              lastInspection: r.last_inspection || "Not inspected",
-              createdAt: r.created_at,
-              updatedAt: r.updated_at,
-            }))
-            setTransformersData(mapped)
-          } catch {
-            const newTransformer: Transformer = {
-              id: created.code || created.id,
-              poleNo: created.pole_no || '',
-              region: created.region || '',
-              type: (created.type as any) || 'Distribution',
-              capacity: created.capacity || '',
-              location: created.location || '',
-              status: (created.status as any) || 'Normal',
-              lastInspection: created.last_inspection || 'Not inspected',
-              createdAt: created.created_at || new Date().toISOString(),
-              updatedAt: created.updated_at || new Date().toISOString(),
-            }
-            setTransformersData((prev) => [...prev, newTransformer])
-          }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load transformers:', err)
+          setError(err instanceof Error ? err.message : 'Failed to load data')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
         }
       }
+    }
+
+    loadData()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Filter transformers based on search and filters
+  const filteredTransformers = useMemo(() => {
+    return transformersData.filter((transformer) => {
+      const searchTerm_lower = searchTerm.toLowerCase()
+      const matchesSearch =
+        (transformer.code?.toLowerCase().includes(searchTerm_lower) ?? false) ||
+        (transformer.poleNo?.toLowerCase().includes(searchTerm_lower) ?? false) ||
+        (transformer.region?.toLowerCase().includes(searchTerm_lower) ?? false) ||
+        (transformer.location?.toLowerCase().includes(searchTerm_lower) ?? false)
+      const matchesRegion = regionFilter === "all" || transformer.region === regionFilter
+      const matchesType = typeFilter === "all" || transformer.type === typeFilter
+      return matchesSearch && matchesRegion && matchesType
+    })
+  }, [transformersData, searchTerm, regionFilter, typeFilter])
+
+  // Get unique regions and types for filters
+  const regions = useMemo(() => {
+    const uniqueRegions = [...new Set(transformersData.map(t => t.region).filter(Boolean))]
+    return uniqueRegions.sort()
+  }, [transformersData])
+
+  const types = useMemo(() => {
+    const uniqueTypes = [...new Set(transformersData.map(t => t.type).filter(Boolean))]
+    return uniqueTypes.sort()
+  }, [transformersData])
+
+  const handleCreateTransformer = async (data: TransformerFormData) => {
+    try {
+      const newTransformer = await backendApi.transformers.create({
+        code: data.id,
+        poleNo: data.poleNo,
+        region: data.region,
+        type: data.type as any,
+        capacity: data.capacity,
+        location: data.location,
+        status: data.status as any,
+      })
+      setTransformersData(prev => [...prev, newTransformer])
       setShowForm(false)
       setEditingTransformer(undefined)
-    } catch (error) {
-      console.error("Form submission failed:", error)
-      alert(`Failed to ${editingTransformer ? 'update' : 'create'} transformer: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } catch (err) {
+      console.error('Failed to create transformer:', err)
+      alert('Failed to create transformer: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
   }
 
-  const handleFormCancel = () => {
-    setShowForm(false)
-    setEditingTransformer(undefined)
-  }
+  const handleUpdateTransformer = async (data: TransformerFormData) => {
+    if (!editingTransformer) return
 
-  const handleEdit = async (transformer: Transformer) => {
     try {
-      if (dataSource === 'backend' && backendConnected) {
-        // Use Spring Boot backend
-        const backendTransformer = await backendApi.transformers.getById(transformer.id)
-        const mapped = convertBackendTransformer(backendTransformer)
-        setEditingTransformer(mapped)
-      } else {
-        // Fallback to Supabase API
-        const res = await fetch(`/api/transformers/${transformer.id}`)
-        if (res.ok) {
-          const t = await res.json()
-          const mapped: Transformer = {
-            id: t.code || t.id,
-            poleNo: t.pole_no || "",
-            region: t.region || "",
-            type: (t.type as "Distribution" | "Bulk") || "Distribution",
-            capacity: t.capacity || "",
-            location: t.location || "",
-            status: (t.status as any) || "Normal",
-            lastInspection: t.last_inspection || transformer.lastInspection,
-            createdAt: t.created_at || transformer.createdAt,
-            updatedAt: t.updated_at || transformer.updatedAt,
-          }
-          setEditingTransformer(mapped)
-        } else {
-          setEditingTransformer(transformer)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch transformer for editing:', error)
-      setEditingTransformer(transformer)
+      const updatedTransformer = await backendApi.transformers.update(editingTransformer.id, {
+        code: data.id,
+        poleNo: data.poleNo,
+        region: data.region,
+        type: data.type as any,
+        capacity: data.capacity,
+        location: data.location,
+        status: data.status as any,
+      })
+      setTransformersData(prev => prev.map(t => t.id === editingTransformer.id ? updatedTransformer : t))
+      setShowForm(false)
+      setEditingTransformer(undefined)
+    } catch (err) {
+      console.error('Failed to update transformer:', err)
+      alert('Failed to update transformer: ' + (err instanceof Error ? err.message : 'Unknown error'))
     }
-    setShowForm(true)
   }
 
-  const handleDelete = (transformerId: string) => {
-    setDeleteTargetId(transformerId)
+  const handleDeleteTransformer = async (id: string) => {
+    try {
+      await backendApi.transformers.delete(id)
+      setTransformersData(prev => prev.filter(t => t.id !== id))
+    } catch (err) {
+      console.error('Failed to delete transformer:', err)
+      alert('Failed to delete transformer: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    }
+  }
+
+  const openDeleteDialog = (id: string) => {
+    setDeleteTargetId(id)
     setDeleteDialogOpen(true)
   }
 
   const confirmDelete = async () => {
-    if (!deleteTargetId) return
-    try {
-      if (dataSource === 'backend' && backendConnected) {
-        // Use Spring Boot backend
-        await backendApi.transformers.delete(deleteTargetId)
-        setTransformersData((prev) => prev.filter((t) => t.id !== deleteTargetId))
-      } else {
-        // Fallback to Supabase API
-        const res = await fetch(`/api/transformers/${deleteTargetId}`, { method: 'DELETE' })
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}))
-          throw new Error(j?.error || 'Delete failed')
-        }
-        try {
-          const dbRows = await fetchTransformersFromDb()
-          const mapped: Transformer[] = dbRows.map((r) => ({
-            id: r.code || r.id,
-            poleNo: r.pole_no || "",
-            region: r.region || "",
-            type: (r.type as any) || "Distribution",
-            capacity: r.capacity || "",
-            location: r.location || "",
-            status: (r.status as any) || "Normal",
-            lastInspection: r.last_inspection || "Not inspected",
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          }))
-          setTransformersData(mapped)
-        } catch {
-          setTransformersData((prev) => prev.filter((t) => t.id !== deleteTargetId))
-        }
-      }
-    } catch (error) {
-      console.error("Failed to delete transformer:", error)
-      alert(`Failed to delete transformer: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
+    if (deleteTargetId) {
+      await handleDeleteTransformer(deleteTargetId)
       setDeleteDialogOpen(false)
       setDeleteTargetId(null)
     }
   }
 
+  const closeDeleteDialog = () => {
+    setDeleteDialogOpen(false)
+    setDeleteTargetId(null)
+  }
+
   const columns = [
     {
-      key: "id" as keyof Transformer,
-      header: "Transformer No.",
-      render: (value: string) => <span className="font-medium">{value}</span>,
+      key: 'code' as keyof Transformer,
+      header: 'Code',
+      render: (value: string | null) => <span className="font-mono">{value || 'N/A'}</span>
     },
     {
-      key: "poleNo" as keyof Transformer,
-      header: "Pole No.",
+      key: 'poleNo' as keyof Transformer,
+      header: 'Pole No.'
     },
     {
-      key: "region" as keyof Transformer,
-      header: "Region/Branch",
+      key: 'region' as keyof Transformer,
+      header: 'Region'
     },
     {
-      key: "type" as keyof Transformer,
-      header: "Type",
+      key: 'type' as keyof Transformer,
+      header: 'Type'
     },
     {
-      key: "capacity" as keyof Transformer,
-      header: "Capacity",
+      key: 'capacity' as keyof Transformer,
+      header: 'Capacity'
     },
     {
-      key: "location" as keyof Transformer,
-      header: "Location",
-      render: (value: string) => (
-        <span className="max-w-[200px] truncate block" title={value}>
-          {value}
-        </span>
-      ),
+      key: 'status' as keyof Transformer,
+      header: 'Status',
+      render: (value: string) => <StatusBadge status={value as any} />
     },
     {
-      key: "status" as keyof Transformer,
-      header: "Status",
-      render: (value: string) => <StatusBadge status={value as any} />,
-    },
-    {
-      key: "id" as keyof Transformer,
-      header: "Actions",
+      key: 'id' as keyof Transformer,
+      header: 'Actions',
       render: (value: string, transformer: Transformer) => (
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0 cursor-pointer hover:bg-accent transition-colors"
+            className="h-8 w-8 p-0"
             onClick={() => router.push(`/transformer/${transformer.id}`)}
           >
             <Eye className="h-3 w-3" />
           </Button>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="h-8 w-8 p-0 cursor-pointer hover:bg-accent transition-colors" 
-            onClick={() => handleEdit(transformer)}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={() => {
+              setEditingTransformer(transformer)
+              setShowForm(true)
+            }}
           >
             <Edit className="h-3 w-3" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0 text-destructive cursor-pointer hover:bg-accent transition-colors"
-            onClick={() => handleDelete(transformer.id)}
-            title="Delete"
+            className="h-8 w-8 p-0 text-destructive"
+            onClick={() => openDeleteDialog(transformer.id)}
           >
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
-      ),
-    },
+      )
+    }
   ]
 
-  if (loading) {
+  // Prevent hydration errors by not rendering until mounted
+  if (!mounted || loading) {
     return (
       <MainLayout>
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="loading-skeleton h-24 rounded-lg" />
-            ))}
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading transformers...</p>
           </div>
-          <div className="loading-skeleton h-96 rounded-lg" />
-        </div>
-      </MainLayout>
-    )
-  }
-
-  if (showForm) {
-    return (
-      <MainLayout>
-        <div className="max-w-4xl mx-auto py-6">
-          <TransformerForm
-            key={editingTransformer?.id || 'new'}
-            transformer={editingTransformer}
-            onSubmit={handleFormSubmit}
-            onCancel={handleFormCancel}
-            existingTransformers={transformersData}
-          />
         </div>
       </MainLayout>
     )
@@ -516,152 +287,161 @@ export default function TransformersPage() {
         title="Delete Transformer"
         description="Are you sure you want to delete this transformer? This action cannot be undone."
         onConfirm={confirmDelete}
-        onCancel={() => { setDeleteDialogOpen(false); setDeleteTargetId(null) }}
+        onCancel={closeDeleteDialog}
         confirmText="Delete"
         cancelText="Cancel"
       />
+      
       <MainLayout>
         <div className="space-y-6">
+          {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-sans font-bold text-foreground">Transformer Management</h1>
-              <div className="flex items-center gap-4">
-                <p className="text-muted-foreground font-serif">Manage transformer records and inspections</p>
-                <div className="flex items-center gap-2">
-                  {backendConnected === true ? (
-                    <div className="flex items-center gap-1 text-green-600 text-xs">
-                      <Wifi className="h-3 w-3" />
-                      <span>Backend: Connected</span>
-                    </div>
-                  ) : backendConnected === false ? (
-                    <div className="flex items-center gap-1 text-orange-600 text-xs">
-                      <WifiOff className="h-3 w-3" />
-                      <span>Backend: Offline</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 text-gray-500 text-xs">
-                      <Activity className="h-3 w-3" />
-                      <span>Checking...</span>
-                    </div>
-                  )}
-                  <span className="text-xs text-muted-foreground">
-                    ({dataSource === 'backend' ? 'Spring Boot' : dataSource === 'supabase' ? 'Supabase' : 'Mock Data'})
-                  </span>
-                </div>
-              </div>
+              <h1 className="text-3xl font-bold">Transformers</h1>
+              <p className="text-muted-foreground">Manage and monitor power transformers</p>
             </div>
-            <Button className="button-primary" onClick={() => setShowForm(true)}>
-              <Plus className="mr-2 h-4 w-4" />
+            <Button onClick={() => setShowForm(true)} className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
               Add Transformer
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <StatsCard
-              title="Total Transformers"
-              value={stats?.totalTransformers || 0}
-              description="Currently operational"
-              icon={Zap}
-            />
-            <StatsCard
-              title="Pending Inspections"
-              value={stats?.pendingInspections || 0}
-              description="Require attention"
-              icon={Clock}
-            />
-            <StatsCard
-              title="Critical Alerts"
-              value={stats?.criticalAlerts || 0}
-              description="Immediate action needed"
-              icon={AlertTriangle}
-              className="text-destructive"
-            />
-            <StatsCard
-              title="Inspections Today"
-              value={stats?.inspectionsToday || 0}
-              description="Completed successfully"
-              icon={Activity}
-            />
-          </div>
+          {/* Error Alert */}
+          {error && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                {error}
+              </AlertDescription>
+            </Alert>
+          )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-3">
-              <DataTable
-                data={filteredTransformers}
-                columns={columns}
-                title="Transformers"
-                description="Manage transformer records and data"
-                actions={
-                  <div className="flex flex-col sm:flex-row gap-4 w-full">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search by Transformer No. or Location..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 font-serif focus-ring"
-                      />
-                    </div>
-                    <Select value={regionFilter} onValueChange={setRegionFilter}>
-                      <SelectTrigger className="w-full sm:w-[180px] font-serif focus-ring">
-                        <SelectValue placeholder="Filter by Region" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Regions</SelectItem>
-                        {uniqueRegions.map((region) => (
-                          <SelectItem key={region} value={region}>
-                            {region}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={typeFilter} onValueChange={setTypeFilter}>
-                      <SelectTrigger className="w-full sm:w-[180px] font-serif focus-ring">
-                        <SelectValue placeholder="Filter by Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Types</SelectItem>
-                        {uniqueTypes.map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {type}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                }
-                emptyMessage="No transformers found matching your search criteria."
+          {/* Stats */}
+          {stats && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatsCard
+                title="Total Transformers"
+                value={stats.totalTransformers}
+                icon={Zap}
+                trend={{ value: 0, label: "from last month" }}
+                description="All registered transformers"
+              />
+              <StatsCard
+                title="Operational"
+                value={stats.operationalTransformers}
+                icon={CheckCircle}
+                trend={{ value: 0, label: "from last month" }}
+                description="Currently operational"
+              />
+              <StatsCard
+                title="Pending Inspections"
+                value={stats.pendingInspections}
+                icon={Clock}
+                trend={{ value: 0, label: "from last week" }}
+                description="Require attention"
+              />
+              <StatsCard
+                title="Critical Alerts"
+                value={stats.criticalAlerts}
+                icon={AlertTriangle}
+                trend={{ value: 0, label: "from last week" }}
+                description="Immediate action needed"
               />
             </div>
+          )}
 
-            <Card className="card-hover">
-              <CardHeader>
-                <CardTitle className="font-sans">Recent Alerts</CardTitle>
-                <CardDescription className="font-serif">Latest system notifications</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+          {/* Filters and Search */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Transformer Management</CardTitle>
+              <CardDescription>Search and filter transformers</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search transformers..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+                <Select value={regionFilter} onValueChange={setRegionFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="All Regions" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Regions</SelectItem>
+                    {regions.map((region) => (
+                      <SelectItem key={region} value={region}>
+                        {region}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {types.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <DataTable 
+                data={filteredTransformers} 
+                columns={columns}
+                emptyMessage="No transformers found"
+              />
+            </CardContent>
+          </Card>
+
+          {/* Recent Alerts */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Alerts</CardTitle>
+              <CardDescription>Latest system notifications and warnings</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
                 {recentAlerts.map((alert, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start space-x-3 p-3 rounded-lg bg-muted/50 border border-border/50"
-                  >
-                    {alert.type === "critical" && (
-                      <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-                    )}
-                    {alert.type === "success" && <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />}
-                    {alert.type === "warning" && (
-                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-serif text-foreground leading-relaxed">{alert.message}</p>
-                      <p className="text-xs text-muted-foreground font-serif mt-1">{alert.time}</p>
+                  <div key={index} className="flex items-start space-x-3 p-3 rounded-lg border">
+                    {alert.type === "critical" && <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5" />}
+                    {alert.type === "warning" && <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />}
+                    {alert.type === "success" && <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />}
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{alert.message}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{alert.time}</p>
                     </div>
                   </div>
                 ))}
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
+
+        {/* Transformer Form Modal */}
+        {showForm && (
+          <TransformerForm
+            open={showForm}
+            onClose={() => {
+              setShowForm(false)
+              setEditingTransformer(undefined)
+            }}
+            onSubmit={editingTransformer ? handleUpdateTransformer : handleCreateTransformer}
+            transformer={editingTransformer}
+            existingTransformers={transformersData}
+          />
+        )}
       </MainLayout>
     </>
   )

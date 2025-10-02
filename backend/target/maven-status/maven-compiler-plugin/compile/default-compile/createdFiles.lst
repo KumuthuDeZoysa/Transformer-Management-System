@@ -1,3 +1,4 @@
+com\transformer\management\config\CloudinaryConfig.class
 com\transformer\management\entity\Inspection.class
 com\transformer\management\repository\UserRepository.class
 com\transformer\management\entity\Transformer.class
@@ -13,6 +14,7 @@ com\transformer\management\controller\SeedController.class
 com\transformer\management\config\SecurityConfig.class
 com\transformer\management\controller\TransformerController.class
 com\transformer\management\entity\Image.class
+com\transformer\management\service\CloudinaryService.class
 com\transformer\management\dto\ImageDTO.class
 com\transformer\management\controller\ImageController.class
 com\transformer\management\repository\TransformerRepository.class

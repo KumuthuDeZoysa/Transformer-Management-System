@@ -16,6 +16,18 @@ import { fetchInspections, updateInspection, type DbInspection } from '@/lib/ins
 import backendApi, { type BackendTransformer, type BackendInspection } from '@/lib/backend-api'
 import { transformerApi } from '@/lib/mock-api'
 
+// Helper function to construct full image URL from backend
+const getImageUrl = (url: string): string => {
+  if (!url) return ''
+  // If already a full URL, return as is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+  // If relative path, prepend backend URL
+  const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
+  return `${backendBaseUrl}${url.startsWith('/') ? url : '/' + url}`
+}
+
 interface ImageUpload {
   id: string
   inspectionId: string
@@ -125,7 +137,10 @@ export default function InspectionDetailPage() {
           if (backendConnected) {
             // Get baseline image using dedicated endpoint
             const baselineImage = await backendApi.images.getBaselineImage(currentInspection.transformer_id)
+            console.log('🖼️ Loaded baseline image:', baselineImage)
             if (baselineImage) {
+              console.log('  - Raw URL:', baselineImage.url)
+              console.log('  - Full URL:', getImageUrl(baselineImage.url))
               setBaselineImages([baselineImage])
             } else {
               setBaselineImages([])
@@ -136,12 +151,18 @@ export default function InspectionDetailPage() {
               currentInspection.transformer_id, 
               'maintenance'
             )
+            console.log('🖼️ Loaded maintenance images:', maintenanceImages)
             
             // Filter maintenance images for this specific inspection
             const inspectionMaintenanceImages = maintenanceImages.filter((img: any) => 
               img.inspectionId === inspectionId ||
               (currentInspection.inspection_no && img.label && img.label.includes(currentInspection.inspection_no))
             )
+            console.log('🖼️ Filtered maintenance images for this inspection:', inspectionMaintenanceImages)
+            if (inspectionMaintenanceImages.length > 0) {
+              console.log('  - First image raw URL:', inspectionMaintenanceImages[0].url)
+              console.log('  - First image full URL:', getImageUrl(inspectionMaintenanceImages[0].url))
+            }
             
             setMaintenanceImages(inspectionMaintenanceImages)
           } else {
@@ -796,9 +817,13 @@ export default function InspectionDetailPage() {
                   </div>
                   <div className="relative aspect-[4/3] bg-muted rounded-lg overflow-hidden border">
                     <img
-                      src={baselineImages[0].url}
+                      src={getImageUrl(baselineImages[0].url)}
                       alt="Baseline thermal image"
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        console.error('Failed to load baseline image:', baselineImages[0].url)
+                        e.currentTarget.src = '/placeholder.jpg'
+                      }}
                     />
                     <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-serif">
                       {baselineImages[0].capturedAt ? new Date(baselineImages[0].capturedAt).toLocaleDateString() : 'Invalid Date'} {baselineImages[0].capturedAt ? new Date(baselineImages[0].capturedAt).toLocaleTimeString() : 'Invalid Date'}
@@ -817,9 +842,13 @@ export default function InspectionDetailPage() {
                   </div>
                   <div className="relative aspect-[4/3] bg-muted rounded-lg overflow-hidden border">
                     <img
-                      src={maintenanceImages[maintenanceImages.length - 1].url}
+                      src={getImageUrl(maintenanceImages[maintenanceImages.length - 1].url)}
                       alt="Current thermal image"
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        console.error('Failed to load maintenance image:', maintenanceImages[maintenanceImages.length - 1].url)
+                        e.currentTarget.src = '/placeholder.jpg'
+                      }}
                     />
                     <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-serif">
                       {maintenanceImages[maintenanceImages.length - 1].capturedAt ? new Date(maintenanceImages[maintenanceImages.length - 1].capturedAt).toLocaleDateString() : 'Invalid Date'} {maintenanceImages[maintenanceImages.length - 1].capturedAt ? new Date(maintenanceImages[maintenanceImages.length - 1].capturedAt).toLocaleTimeString() : 'Invalid Date'}

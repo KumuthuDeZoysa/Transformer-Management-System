@@ -12,7 +12,9 @@ D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\controller\InspectionController.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\TransformerBackendApplication.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\repository\InspectionRepository.java
+D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\config\CloudinaryConfig.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\entity\Image.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\repository\ImageRepository.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\config\CorsConfig.java
+D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\service\CloudinaryService.java
 D:\Software Design Competition\Phase 1\Transformer-Management-System\backend\src\main\java\com\transformer\management\controller\TransformerController.java

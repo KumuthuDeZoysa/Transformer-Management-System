@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { AlertCircle, Save, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Transformer } from "@/lib/types"
 
 // Form data interface - basic transformer data without metadata
 export interface TransformerFormData {
@@ -19,20 +20,6 @@ export interface TransformerFormData {
   type: "Distribution" | "Bulk"
   capacity: string
   location: string
-}
-
-// Full transformer interface with all metadata
-interface Transformer {
-  id: string
-  poleNo: string
-  region: string
-  type: "Distribution" | "Bulk"
-  capacity: string
-  location: string
-  status: "Normal" | "Warning" | "Critical"
-  lastInspection: string
-  createdAt: string
-  updatedAt: string
 }
 
 interface TransformerFormProps {
@@ -73,15 +60,15 @@ export function TransformerForm({ transformer, onSubmit, onCancel, existingTrans
   useEffect(() => {
     if (transformer) {
       // Strip " kVA" suffix from capacity if present for editing
-      const capacityValue = transformer.capacity.replace(/ kVA$/i, '').trim()
+      const capacityValue = transformer.capacity?.replace(/ kVA$/i, '').trim() || ''
       
       setFormData({
         id: transformer.id,
-        poleNo: transformer.poleNo,
-        region: transformer.region,
-        type: transformer.type as "Distribution" | "Bulk",
+        poleNo: transformer.poleNo || "",
+        region: transformer.region || "",
+        type: (transformer.type as "Distribution" | "Bulk") || "Distribution",
         capacity: capacityValue,
-        location: transformer.location,
+        location: transformer.location || "",
       })
     } else {
       // Reset form for new transformer

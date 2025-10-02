@@ -1,8 +1,7 @@
 "use client"
 
-import type React from "react"
-
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -10,61 +9,69 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Upload, ImageIcon, ArrowLeft, CheckCircle, Clock } from "lucide-react"
-import Link from "next/link"
-import { transformerApi, imageApi } from "@/lib/backend-api"
+import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
+import { Upload, ArrowLeft, CheckCircle, Clock, ImageIcon } from "lucide-react"
+import backendApi from "@/lib/backend-api"
+import { type Transformer, type ImageUpload } from "@/lib/types"
 
-type DbTransformer = {
-  id: string // uuid
-  code: string | null
-  region: string | null
-  location: string | null
+// Helper function to construct full image URL from backend
+const getImageUrl = (url: string): string => {
+  if (!url) return ''
+  // If already a full URL, return as is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+  // If relative path, prepend backend URL
+  const backendBaseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'
+  return `${backendBaseUrl}${url.startsWith('/') ? url : '/' + url}`
 }
 
-interface ImageUpload {
-  id: string
-  transformerId: string
-  fileName: string
-  imageType: "baseline" | "maintenance"
-  uploaderName: string
-  uploadDateTime: string
-  comments?: string
-  environmentalCondition?: "sunny" | "cloudy" | "rainy"
-}
-
-export default function ImageUploadPage() {
-  // Stores the transformer UUID from DB
+export default function AddInspectionPage() {
   const [selectedTransformer, setSelectedTransformer] = useState("")
-  const [transformerOptions, setTransformerOptions] = useState<Array<{ uuid: string; code: string; label: string }>>([])
+  const [transformerOptions, setTransformerOptions] = useState<Transformer[]>([])
   const [imageType, setImageType] = useState<"baseline" | "maintenance" | "">("")
   const [uploaderName, setUploaderName] = useState("")
   const [comments, setComments] = useState("")
   const [environmentalCondition, setEnvironmentalCondition] = useState("")
+  const [branch, setBranch] = useState("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadComplete, setUploadComplete] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // Mock API storage
+  // Comparison preview state
+  const [showComparison, setShowComparison] = useState(false)
+  const [currentPreviewUrl, setCurrentPreviewUrl] = useState<string | null>(null)
+  const [baselinePreviewUrl, setBaselinePreviewUrl] = useState<string | null>(null)
+
+  // Recent uploads for display
   const [imageUploads, setImageUploads] = useState<ImageUpload[]>([])
 
-  // Load transformers from backend API for dropdown
+  // Load transformers from backend API
   useEffect(() => {
     let cancelled = false
-    const load = async () => {
+    const loadTransformers = async () => {
+      setLoading(true)
+      setError(null)
       try {
-        const transformers = await transformerApi.getAll()
-        const opts = transformers.map((r) => ({
-          uuid: r.id,
-          code: r.code || r.id,
-          label: `${r.code || r.id} - ${r.region || r.location || ''}`.trim(),
-        }))
-        if (!cancelled) setTransformerOptions(opts)
-      } catch (e) {
-        console.error('Failed to load transformers:', e)
+        const transformers = await backendApi.transformers.getAll()
+        if (!cancelled) {
+          setTransformerOptions(transformers)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load transformers')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
-    load()
+    loadTransformers()
     return () => {
       cancelled = true
     }
@@ -74,88 +81,81 @@ export default function ImageUploadPage() {
     const file = event.target.files?.[0]
     if (file) {
       setSelectedFile(file)
+      // Create object URL for immediate preview
+      const url = URL.createObjectURL(file)
+      setCurrentPreviewUrl(url)
     }
   }
+
+  // Cleanup object URL on unmount or file change
+  useEffect(() => {
+    return () => {
+      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl)
+    }
+  }, [currentPreviewUrl])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!selectedTransformer || !imageType || !uploaderName || !selectedFile) {
+    if (!selectedTransformer || !imageType || !uploaderName || !selectedFile || !branch) {
       alert("Please fill in all required fields and select a file")
       return
     }
 
-    if (imageType === "baseline" && !environmentalCondition) {
-      alert("Please select environmental condition for baseline images")
+    if (!environmentalCondition) {
+      alert("Please select weather condition")
       return
     }
 
     setIsUploading(true)
     setUploadProgress(0)
+    setError(null)
 
-    // Simulate upload progress
-    const progressInterval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(progressInterval)
-          return 100
-        }
-        return prev + 10
-      })
-    }, 200)
+    try {
+      // Use backend API to upload image
+      const result = await backendApi.upload.uploadImageToBackend(
+        selectedFile,
+        selectedTransformer,
+        imageType as 'baseline' | 'maintenance',
+        uploaderName,
+        environmentalCondition as 'sunny' | 'cloudy' | 'rainy',
+        comments || undefined,
+        undefined, // no inspection ID for standalone uploads
+        `${selectedFile.name} - ${imageType} by ${uploaderName}`
+      )
 
-    // Upload to backend server using new backend API
-    setTimeout(async () => {
-      try {
-        let result
-        
-        // Try backend API first
-        try {
-          result = await backendApi.upload.uploadImageToBackend(
-            selectedFile!,
-            selectedTransformer,
-            imageType as 'baseline' | 'maintenance',
-            uploaderName,
-            imageType === 'baseline' ? (environmentalCondition as 'sunny' | 'cloudy' | 'rainy') : undefined,
-            comments || undefined,
-            undefined, // no inspection ID for standalone uploads
-            `${selectedFile!.name} - ${imageType} by ${uploaderName}`
-          )
-          console.log('✅ Backend upload successful:', result)
-        } catch (backendError) {
-          console.warn('⚠️ Backend upload failed, trying legacy API:', backendError)
-          // Fallback to legacy API
-          result = await backendApi.upload.uploadImage(selectedFile!, selectedTransformer, {
-            imageType: imageType as 'baseline' | 'maintenance',
-            uploaderName,
-            environmentalCondition: imageType === 'baseline' ? (environmentalCondition as 'sunny' | 'cloudy' | 'rainy') : undefined,
-            comments: comments || undefined,
-          })
-          console.log('✅ Legacy upload successful:', result)
-        }
-        
-        const newUpload: ImageUpload = {
-          id: Date.now().toString(),
-          transformerId: selectedTransformer,
-          fileName: selectedFile!.name,
-          imageType: imageType as 'baseline' | 'maintenance',
-          uploaderName,
-          uploadDateTime: new Date().toISOString(),
-          comments: comments || undefined,
-          environmentalCondition: imageType === 'baseline' ? (environmentalCondition as 'sunny' | 'cloudy' | 'rainy') : undefined,
-        }
-        setImageUploads((prev) => [...prev, newUpload])
+      // Simulate progress completion
+      setUploadProgress(100)
+      setUploadComplete(true)
 
-        setUploadComplete(true)
-        setIsUploading(false)
-      } catch (err) {
-        console.error('❌ Upload failed:', err)
-        setIsUploading(false)
-        alert('Upload failed: ' + (err as Error).message)
-        return
+      // Create local upload record for display
+      const newUpload: ImageUpload = {
+        id: Date.now().toString(),
+        transformerId: selectedTransformer,
+        fileName: selectedFile.name,
+        imageType: imageType as "baseline" | "maintenance",
+        uploaderName,
+        uploadDateTime: new Date().toISOString(),
+        comments: comments || undefined,
+        environmentalCondition: environmentalCondition as "sunny" | "cloudy" | "rainy",
+        branch,
       }
+      setImageUploads((prev) => [...prev, newUpload])
 
-  // Upload completed
+      // Set up comparison when maintenance image is uploaded
+      if (imageType === "maintenance") {
+        try {
+          // Try to get actual baseline image
+          const baselineImage = await backendApi.images.getBaselineImage(selectedTransformer)
+          setBaselinePreviewUrl(baselineImage ? getImageUrl(baselineImage.url) : "/thermal-baseline-normal.png")
+        } catch {
+          // Fallback to static image
+          setBaselinePreviewUrl("/thermal-baseline-normal.png")
+        }
+        setShowComparison(true)
+      } else {
+        setShowComparison(false)
+      }
 
       // Reset form after successful upload
       setTimeout(() => {
@@ -164,11 +164,22 @@ export default function ImageUploadPage() {
         setUploaderName("")
         setComments("")
         setEnvironmentalCondition("")
+        setBranch("")
         setSelectedFile(null)
         setUploadProgress(0)
-        setUploadComplete(false)
-  }, 2000)
-    }, 2000)
+        // Keep uploadComplete and comparison visible briefly
+        setTimeout(() => {
+          setUploadComplete(false)
+          setShowComparison(false)
+        }, 3000)
+      }, 2000)
+
+    } catch (err) {
+      console.error('Upload failed:', err)
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   return (
@@ -182,7 +193,7 @@ export default function ImageUploadPage() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-3xl font-sans font-bold text-foreground">Image Upload</h1>
+            <h1 className="text-3xl font-sans font-bold text-foreground">Add Inspection</h1>
             <p className="text-muted-foreground font-serif">Upload thermal images for transformer inspection</p>
           </div>
         </div>
@@ -208,8 +219,8 @@ export default function ImageUploadPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {transformerOptions.map((t) => (
-                        <SelectItem key={t.uuid} value={t.uuid}>
-                          {t.label}
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.code || t.id} - {t.region || t.location || 'Unknown Location'}
                         </SelectItem>
                       ))}
                     </SelectContent>

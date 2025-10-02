@@ -7,6 +7,7 @@ import com.transformer.management.dto.ImageDTO;
 import com.transformer.management.repository.ImageRepository;
 import com.transformer.management.repository.TransformerRepository;
 import com.transformer.management.repository.InspectionRepository;
+import com.transformer.management.service.CloudinaryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,6 +32,9 @@ public class ImageController {
 
     @Autowired
     private InspectionRepository inspectionRepository;
+
+    @Autowired
+    private CloudinaryService cloudinaryService;
 
     @GetMapping
     public List<ImageDTO> getAllImages(@RequestParam(required = false) String transformerId,
@@ -253,13 +257,25 @@ public class ImageController {
                 }
             }
 
-            // For now, return a placeholder URL (later integrate with actual file storage like Cloudinary)
-            String placeholderUrl = "https://placeholder.com/images/" + file.getOriginalFilename();
+            // Upload to Cloudinary
+            System.out.println("☁️ Uploading image to Cloudinary...");
+            String folder = "transformer-images/" + imageType.toLowerCase();
+            String[] tags = {imageType, "transformer-" + transformer.get().getCode()};
+            
+            Map<String, Object> uploadResult = cloudinaryService.uploadFile(file, folder, tags);
+            String cloudinaryUrl = (String) uploadResult.get("secure_url");
+            
+            if (cloudinaryUrl == null || cloudinaryUrl.isEmpty()) {
+                System.out.println("❌ Failed to get Cloudinary URL from upload result");
+                return ResponseEntity.status(500).body(Map.of("error", "Failed to upload image to Cloudinary"));
+            }
+            
+            System.out.println("✅ Image uploaded to Cloudinary: " + cloudinaryUrl);
 
             // Create image record with all metadata
             Image image = new Image();
             image.setTransformer(transformer.get());
-            image.setUrl(placeholderUrl);
+            image.setUrl(cloudinaryUrl);
             image.setLabel(label != null ? label : file.getOriginalFilename());
             image.setImageType(imageType);
             image.setUploaderName(uploaderName);
@@ -275,7 +291,7 @@ public class ImageController {
                              " [Type: " + imageType + ", Uploader: " + uploaderName + "]");
 
             return ResponseEntity.ok(Map.of(
-                "url", placeholderUrl,
+                "url", cloudinaryUrl,
                 "image", convertToDTO(savedImage),
                 "message", "Image uploaded successfully"
             ));
