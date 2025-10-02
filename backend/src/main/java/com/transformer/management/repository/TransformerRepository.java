@@ -1,5 +1,6 @@
 package com.transformer.management.repository;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,5 +10,6 @@ import com.transformer.management.entity.Transformer;
 
 @Repository
 public interface TransformerRepository extends JpaRepository<Transformer, UUID> {
-    // Additional query methods can be defined here
+    // Find transformer by code field
+    Optional<Transformer> findByCode(String code);
 }

@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/seed")
+@RequestMapping("/seed")
 public class SeedController {
 
     @Autowired
