@@ -22,3 +22,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Java/Maven
+**/target/
+**/*.class
+**/*.jar
+**/*.war
+**/*.ear
+**/*.log
+**/.classpath
+**/.project
+**/.settings/
+**/.vscode/
+**/bin/
+**/.idea/
+**/*.iml
