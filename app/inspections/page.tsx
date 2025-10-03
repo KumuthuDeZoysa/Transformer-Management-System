@@ -144,26 +144,35 @@ export default function InspectionsPage() {
         setTransformerMap(tMap)
         setTransformers(transformers)
         
-        const mapped: Row[] = ins.map((i) => ({
-          id: i.id,
-          transformerId: i.transformer?.id ? (tMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
-          inspectionNo: i.inspectionNo || '—',
-          inspectedDate: new Date(i.inspectedAt).toLocaleString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          }),
-          maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          }) : '—',
-          status: i.status,
-        }))
+        const mapped: Row[] = ins.map((i) => {
+          // Helper to format dates safely
+          const formatDate = (dateValue: any): string => {
+            if (!dateValue) return '—'
+            try {
+              const date = new Date(dateValue)
+              if (isNaN(date.getTime())) return '—'
+              return date.toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })
+            } catch (e) {
+              console.error('Date parsing error:', e)
+              return '—'
+            }
+          }
+
+          return {
+            id: i.id,
+            transformerId: i.transformer?.id ? (tMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
+            inspectionNo: i.inspectionNo || '—',
+            inspectedDate: formatDate(i.inspectedAt),
+            maintenanceDate: formatDate(i.maintenanceDate),
+            status: i.status,
+          }
+        })
 
         console.log('📊 Mapped inspections from backend:', mapped)
 

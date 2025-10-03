@@ -358,11 +358,16 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl }: AnomalyViewerProp
                 <img
                   src={baselineUrl}
                   alt="Baseline thermal image"
-                  className="absolute top-1/2 left-1/2 max-w-none select-none"
+                  className="absolute top-1/2 left-1/2 select-none"
                   style={{
                     transform: `translate(-50%, -50%) translate(${baselineControls.translateX}px, ${baselineControls.translateY}px) scale(${baselineControls.scale})`,
                     transition: baselineControls.isDragging ? 'none' : 'transform 0.2s ease-out',
-                    pointerEvents: 'none'
+                    pointerEvents: 'none',
+                    maxWidth: '95%',
+                    maxHeight: '95%',
+                    width: 'auto',
+                    height: 'auto',
+                    objectFit: 'contain'
                   }}
                   onError={(e) => {
                     e.currentTarget.src = "/placeholder.svg"
@@ -428,11 +433,16 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl }: AnomalyViewerProp
                 <img
                   src={hasAnalyzed && anomalyData ? anomalyData.overlayImage : maintenanceUrl}
                   alt="Maintenance thermal image"
-                  className="absolute top-1/2 left-1/2 max-w-none select-none"
+                  className="absolute top-1/2 left-1/2 select-none"
                   style={{
                     transform: `translate(-50%, -50%) translate(${maintenanceControls.translateX}px, ${maintenanceControls.translateY}px) scale(${maintenanceControls.scale})`,
                     transition: maintenanceControls.isDragging ? 'none' : 'transform 0.2s ease-out',
-                    pointerEvents: 'none'
+                    pointerEvents: 'none',
+                    maxWidth: '95%',
+                    maxHeight: '95%',
+                    width: 'auto',
+                    height: 'auto',
+                    objectFit: 'contain'
                   }}
                   onError={(e) => {
                     e.currentTarget.src = "/placeholder.svg"
