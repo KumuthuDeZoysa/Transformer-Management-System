@@ -13,6 +13,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
 @RestController
@@ -132,16 +134,35 @@ public class InspectionController {
             }
             inspection.setInspectionNo(inspectionNo);
             
-            // Handle inspectedAt
+            // Handle inspectedAt with proper timezone handling
             String inspectedAtStr = (String) requestData.get("inspectedAt");
             if (inspectedAtStr != null) {
-                inspection.setInspectedAt(java.time.LocalDateTime.parse(inspectedAtStr.replace("Z", "")));
+                try {
+                    // Parse ISO string properly handling timezone
+                    Instant instant = Instant.parse(inspectedAtStr);
+                    LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
+                    inspection.setInspectedAt(localDateTime);
+                    System.out.println("✅ Parsed inspectedAt: " + inspectedAtStr + " -> " + localDateTime);
+                } catch (Exception e) {
+                    System.out.println("❌ Failed to parse inspectedAt: " + inspectedAtStr + ", error: " + e.getMessage());
+                    // Fallback to current time if parsing fails
+                    inspection.setInspectedAt(LocalDateTime.now());
+                }
             }
             
-            // Handle maintenanceDate
+            // Handle maintenanceDate with proper timezone handling
             String maintenanceDateStr = (String) requestData.get("maintenanceDate");
             if (maintenanceDateStr != null) {
-                inspection.setMaintenanceDate(java.time.LocalDateTime.parse(maintenanceDateStr.replace("Z", "")));
+                try {
+                    // Parse ISO string properly handling timezone
+                    Instant instant = Instant.parse(maintenanceDateStr);
+                    LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
+                    inspection.setMaintenanceDate(localDateTime);
+                    System.out.println("✅ Parsed maintenanceDate: " + maintenanceDateStr + " -> " + localDateTime);
+                } catch (Exception e) {
+                    System.out.println("❌ Failed to parse maintenanceDate: " + maintenanceDateStr + ", error: " + e.getMessage());
+                    // Don't set a fallback for maintenance date as it's optional
+                }
             }
             
             inspection.setStatus((String) requestData.get("status"));

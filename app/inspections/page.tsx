@@ -148,8 +148,20 @@ export default function InspectionsPage() {
           id: i.id,
           transformerId: i.transformer?.id ? (tMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
           inspectionNo: i.inspectionNo || '—',
-          inspectedDate: new Date(i.inspectedAt).toLocaleString(),
-          maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString() : '—',
+          inspectedDate: new Date(i.inspectedAt).toLocaleString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
+          maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }) : '—',
           status: i.status,
         }))
 
@@ -302,8 +314,20 @@ export default function InspectionsPage() {
         id: i.id,
         transformerId: i.transformer?.id ? (transformerMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
         inspectionNo: i.inspectionNo || '—',
-        inspectedDate: new Date(i.inspectedAt).toLocaleString(),
-        maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString() : '—',
+        inspectedDate: new Date(i.inspectedAt).toLocaleString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }) : '—',
         status: i.status,
       }))
 

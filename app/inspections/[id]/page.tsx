@@ -138,51 +138,44 @@ export default function InspectionDetailPage() {
         }
 
         // Load existing images for this transformer and inspection
-        try {
-          console.log('📸 [Image Loading] Starting to load images...')
-          console.log('   - Backend Connected:', backendConnected)
+        // THIS IS CRITICAL: Images must persist across page refreshes for Phase 3 version control
+        if (healthCheck.status === 'healthy') {
+          console.log('📸 [Image Loading] Starting to load images from backend...')
           console.log('   - Inspection ID:', inspectionId)
           console.log('   - Transformer ID:', currentInspection.transformer_id)
           
-          // Use backend API instead of Next.js API
-          if (backendConnected) {
-            console.log('✅ Using Spring Boot backend for image loading')
-            
-            // Get baseline image for THIS SPECIFIC INSPECTION (not just transformer)
-            const baselineImage = await backendApi.images.getBaselineImageByInspection(inspectionId)
-            console.log('🖼️ Loaded baseline image for inspection:', baselineImage)
-            if (baselineImage) {
-              console.log('  - Raw URL:', baselineImage.url)
-              console.log('  - Full URL:', getImageUrl(baselineImage.url))
-              setBaselineImages([baselineImage])
-            } else {
-              console.log('⚠️ No baseline image found for this inspection')
-              setBaselineImages([])
-            }
-            
-            // Get maintenance images for this inspection
-            const maintenanceImages = await backendApi.images.getByTransformerIdAndType(
-              currentInspection.transformer_id, 
-              'maintenance'
-            )
-            console.log('🖼️ Loaded maintenance images:', maintenanceImages)
-            console.log('   - Total maintenance images for transformer:', maintenanceImages.length)
-            
-            // Filter maintenance images for this specific inspection
-            const inspectionMaintenanceImages = maintenanceImages.filter((img: any) => 
-              img.inspectionId === inspectionId ||
-              (currentInspection.inspection_no && img.label && img.label.includes(currentInspection.inspection_no))
-            )
-            console.log('🖼️ Filtered maintenance images for this inspection:', inspectionMaintenanceImages)
-            console.log('   - Maintenance images for THIS inspection:', inspectionMaintenanceImages.length)
-            if (inspectionMaintenanceImages.length > 0) {
-              console.log('  - First image raw URL:', inspectionMaintenanceImages[0].url)
-              console.log('  - First image full URL:', getImageUrl(inspectionMaintenanceImages[0].url))
-            }
-            
-            setMaintenanceImages(inspectionMaintenanceImages)
+          // Load baseline image for THIS specific inspection
+          const baselineImage = await backendApi.images.getBaselineImageByInspection(inspectionId)
+          if (baselineImage) {
+            console.log('✅ [Baseline] Found baseline image:', baselineImage.id)
+            console.log('   - URL:', baselineImage.url)
+            console.log('   - Captured:', baselineImage.capturedAt)
+            setBaselineImages([baselineImage])
           } else {
-            // Fallback to Next.js API if backend is not available
+            console.log('ℹ️ [Baseline] No baseline image exists for this inspection yet')
+            setBaselineImages([])
+          }
+          
+          // Load maintenance images for THIS specific inspection
+          const inspectionImages = await backendApi.images.getByInspectionId(inspectionId)
+          const maintenanceOnly = inspectionImages.filter((img: any) => img.imageType === 'maintenance')
+          
+          if (maintenanceOnly.length > 0) {
+            console.log(`✅ [Maintenance] Found ${maintenanceOnly.length} maintenance image(s)`)
+            maintenanceOnly.forEach((img: any, index: number) => {
+              console.log(`   ${index + 1}. ID: ${img.id}, URL: ${img.url}, Captured: ${img.capturedAt}`)
+            })
+            setMaintenanceImages(maintenanceOnly)
+          } else {
+            console.log('ℹ️ [Maintenance] No maintenance images exist for this inspection yet')
+            setMaintenanceImages([])
+          }
+          
+          console.log('✅ [Image Loading] Complete - Baseline:', baselineImage ? '1' : '0', ', Maintenance:', maintenanceOnly.length)
+        } else {
+          // Fallback to Next.js API if backend is not available
+          console.warn('⚠️ Backend not available, using Next.js API fallback')
+          try {
             const imagesResponse = await fetch(`/api/images?transformer_id=${currentInspection.transformer_id}`)
             if (imagesResponse.ok) {
               const imagesData = await imagesResponse.json()
@@ -204,9 +197,11 @@ export default function InspectionDetailPage() {
               setBaselineImages(baseline)
               setMaintenanceImages(maintenance)
             }
+          } catch (error) {
+            console.error('❌ Failed to load images from Next.js API:', error)
+            setBaselineImages([])
+            setMaintenanceImages([])
           }
-        } catch (error) {
-          console.error('Failed to load existing images:', error)
         }
       } catch (error) {
         console.error('Failed to load inspection:', error)
@@ -229,34 +224,41 @@ export default function InspectionDetailPage() {
   }
 
   const refreshImages = async () => {
-    try {
-      if (!inspection?.transformer_id) return
+    console.log('🔄 [Refresh] Reloading images for inspection:', inspectionId)
+    
+    if (!inspection?.transformer_id) {
+      console.warn('⚠️ [Refresh] No inspection or transformer ID available')
+      return
+    }
 
-      if (backendConnected) {
-        // Use backend API with dedicated endpoints
-        // Get baseline image for THIS SPECIFIC INSPECTION
-        const baselineImage = await backendApi.images.getBaselineImageByInspection(inspectionId)
-        if (baselineImage) {
-          setBaselineImages([baselineImage])
-        } else {
-          setBaselineImages([])
-        }
-        
-        // Get maintenance images for this inspection
-        const maintenanceImages = await backendApi.images.getByTransformerIdAndType(
-          inspection.transformer_id, 
-          'maintenance'
-        )
-        
-        // Filter maintenance images for this specific inspection
-        const inspectionMaintenanceImages = maintenanceImages.filter((img: any) => 
-          img.inspectionId === inspectionId ||
-          (inspection.inspection_no && img.label && img.label.includes(inspection.inspection_no))
-        )
-        
-        setMaintenanceImages(inspectionMaintenanceImages)
+    if (backendConnected) {
+      // Load baseline image for THIS specific inspection
+      const baselineImage = await backendApi.images.getBaselineImageByInspection(inspectionId)
+      if (baselineImage) {
+        console.log('✅ [Refresh-Baseline] Found baseline image:', baselineImage.id)
+        setBaselineImages([baselineImage])
       } else {
-        // Fallback to Next.js API
+        console.log('ℹ️ [Refresh-Baseline] No baseline image found')
+        setBaselineImages([])
+      }
+      
+      // Load maintenance images for THIS specific inspection
+      const inspectionImages = await backendApi.images.getByInspectionId(inspectionId)
+      const maintenanceOnly = inspectionImages.filter((img: any) => img.imageType === 'maintenance')
+      
+      if (maintenanceOnly.length > 0) {
+        console.log(`✅ [Refresh-Maintenance] Found ${maintenanceOnly.length} maintenance image(s)`)
+        setMaintenanceImages(maintenanceOnly)
+      } else {
+        console.log('ℹ️ [Refresh-Maintenance] No maintenance images found')
+        setMaintenanceImages([])
+      }
+      
+      console.log('✅ [Refresh] Complete - Baseline:', baselineImage ? '1' : '0', ', Maintenance:', maintenanceOnly.length)
+    } else {
+      // Fallback to Next.js API
+      console.warn('⚠️ Backend not available during refresh, using Next.js API')
+      try {
         const imagesResponse = await fetch(`/api/images?transformer_id=${inspection.transformer_id}`)
         if (imagesResponse.ok) {
           const imagesData = await imagesResponse.json()
@@ -279,9 +281,11 @@ export default function InspectionDetailPage() {
           setBaselineImages(baseline)
           setMaintenanceImages(maintenance)
         }
+      } catch (error) {
+        console.error('❌ [Refresh] Failed to load images:', error)
+        setBaselineImages([])
+        setMaintenanceImages([])
       }
-    } catch (error) {
-      console.error('Failed to refresh images:', error)
     }
   }
 
@@ -444,25 +448,27 @@ export default function InspectionDetailPage() {
               </Badge>
             </div>
             <p className="text-muted-foreground font-serif">
-              {new Date(inspection.inspected_at).toLocaleDateString('en-US', { 
+              {new Date(inspection.inspected_at).toLocaleString('en-US', { 
                 weekday: 'short', 
                 year: 'numeric', 
                 month: 'short', 
                 day: 'numeric',
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                timeZoneName: 'short'
               })}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground font-serif">Last updated:</span>
             <span className="text-sm font-serif">
-              {new Date(inspection.updated_at).toLocaleDateString('en-US', { 
+              {new Date(inspection.updated_at).toLocaleString('en-US', { 
                 month: 'short', 
                 day: 'numeric', 
                 year: 'numeric',
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                timeZoneName: 'short'
               })}
             </span>
             <Badge variant="outline" className="ml-2">
@@ -934,9 +940,6 @@ export default function InspectionDetailPage() {
                           Yellow: Low Severity (&lt;0.5)
                         </span>
                       </div>
-                      <p className="text-xs text-blue-600 dark:text-blue-400 font-serif mt-2">
-                        💡 Hover over any bounding box to see detailed metadata: coordinates, size, and severity score
-                      </p>
                     </div>
                   </div>
                 </div>
