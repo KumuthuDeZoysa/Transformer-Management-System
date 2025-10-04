@@ -37,17 +37,18 @@ public class InspectionController {
     private AnomalyDetectionRepository anomalyDetectionRepository;
 
     // Auto-generate inspection number with format: INSP-YYYYMMDD-NNNN
-    private String generateInspectionNumber() {
-        String today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String prefix = "INSP-" + today + "-";
+    // YYYYMMDD is based on the inspection date (inspectedAt), not the creation date
+    private String generateInspectionNumber(LocalDateTime inspectedAt) {
+        String inspectionDate = inspectedAt.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String prefix = "INSP-" + inspectionDate + "-";
         
-        // Find the highest sequence number for today
-        List<Inspection> todaysInspections = inspectionRepository.findByInspectionNoStartingWith(prefix);
+        // Find the highest sequence number for inspections on this date
+        List<Inspection> inspectionsOnDate = inspectionRepository.findByInspectionNoStartingWith(prefix);
         
         int nextSequence = 1;
-        if (!todaysInspections.isEmpty()) {
+        if (!inspectionsOnDate.isEmpty()) {
             // Extract sequence numbers and find the maximum
-            int maxSequence = todaysInspections.stream()
+            int maxSequence = inspectionsOnDate.stream()
                 .mapToInt(inspection -> {
                     String inspectionNo = inspection.getInspectionNo();
                     if (inspectionNo != null && inspectionNo.startsWith(prefix)) {
@@ -64,6 +65,7 @@ public class InspectionController {
             nextSequence = maxSequence + 1;
         }
         
+        System.out.println("✅ Generated inspection number: " + prefix + String.format("%04d", nextSequence) + " (for inspection date: " + inspectionDate + ")");
         return prefix + String.format("%04d", nextSequence);
     }
 
@@ -153,32 +155,35 @@ public class InspectionController {
             Inspection inspection = new Inspection();
             inspection.setTransformer(transformer.get());
             
-            // Auto-generate inspection number if not provided
-            String inspectionNo = (String) requestData.get("inspectionNo");
-            if (inspectionNo == null || inspectionNo.trim().isEmpty()) {
-                inspectionNo = generateInspectionNumber();
-            }
-            inspection.setInspectionNo(inspectionNo);
-            
-            // Handle inspectedAt with proper timezone handling
+            // Handle inspectedAt with proper timezone handling FIRST (needed for inspection number generation)
+            LocalDateTime inspectedAtDateTime;
             String inspectedAtStr = (String) requestData.get("inspectedAt");
             if (inspectedAtStr != null) {
                 try {
                     // Parse ISO string properly handling timezone
                     Instant instant = Instant.parse(inspectedAtStr);
-                    LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
-                    inspection.setInspectedAt(localDateTime);
-                    System.out.println("✅ Parsed inspectedAt: " + inspectedAtStr + " -> " + localDateTime);
+                    inspectedAtDateTime = LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
+                    inspection.setInspectedAt(inspectedAtDateTime);
+                    System.out.println("✅ Parsed inspectedAt: " + inspectedAtStr + " -> " + inspectedAtDateTime);
                 } catch (Exception e) {
                     System.out.println("❌ Failed to parse inspectedAt: " + inspectedAtStr + ", error: " + e.getMessage());
                     // Fallback to current time if parsing fails
-                    inspection.setInspectedAt(LocalDateTime.now());
+                    inspectedAtDateTime = LocalDateTime.now();
+                    inspection.setInspectedAt(inspectedAtDateTime);
                 }
             } else {
                 // If no inspectedAt provided, use current time
-                inspection.setInspectedAt(LocalDateTime.now());
+                inspectedAtDateTime = LocalDateTime.now();
+                inspection.setInspectedAt(inspectedAtDateTime);
                 System.out.println("ℹ️ No inspectedAt provided, using current time");
             }
+            
+            // Auto-generate inspection number if not provided (uses inspectedAt for the date)
+            String inspectionNo = (String) requestData.get("inspectionNo");
+            if (inspectionNo == null || inspectionNo.trim().isEmpty()) {
+                inspectionNo = generateInspectionNumber(inspectedAtDateTime);
+            }
+            inspection.setInspectionNo(inspectionNo);
             
             // Handle maintenanceDate with proper timezone handling
             String maintenanceDateStr = (String) requestData.get("maintenanceDate");
