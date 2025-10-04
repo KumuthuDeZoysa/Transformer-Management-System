@@ -4,16 +4,18 @@ import com.transformer.management.entity.Inspection;
 import com.transformer.management.entity.Transformer;
 import com.transformer.management.repository.InspectionRepository;
 import com.transformer.management.repository.TransformerRepository;
+import com.transformer.management.repository.ImageRepository;
+import com.transformer.management.repository.AnomalyDetectionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.time.LocalDateTime;
-import java.time.ZonedDateTime;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
@@ -27,6 +29,12 @@ public class InspectionController {
 
     @Autowired
     private TransformerRepository transformerRepository;
+    
+    @Autowired
+    private ImageRepository imageRepository;
+    
+    @Autowired
+    private AnomalyDetectionRepository anomalyDetectionRepository;
 
     // Auto-generate inspection number with format: INSP-YYYYMMDD-NNNN
     private String generateInspectionNumber() {
@@ -268,23 +276,48 @@ public class InspectionController {
     }
 
     @DeleteMapping("/{id}")
+    @Transactional
     public ResponseEntity<Void> deleteInspection(@PathVariable String id) {
         System.out.println("🗑️ Attempting to delete inspection with ID: " + id);
         
-        // Try to parse as UUID first
         try {
             UUID uuid = UUID.fromString(id);
+            
+            // Check if inspection exists
             if (!inspectionRepository.existsById(uuid)) {
                 System.out.println("❌ Inspection not found: " + id);
                 return ResponseEntity.notFound().build();
             }
+            
+            // Step 1: Delete related anomaly detections first
+            List<com.transformer.management.entity.AnomalyDetection> anomalies = 
+                anomalyDetectionRepository.findByInspectionId(uuid);
+            if (!anomalies.isEmpty()) {
+                System.out.println("🗑️ Deleting " + anomalies.size() + " related anomaly detection(s)");
+                anomalyDetectionRepository.deleteAll(anomalies);
+            }
+            
+            // Step 2: Delete related images
+            List<com.transformer.management.entity.Image> images = 
+                imageRepository.findByInspectionId(uuid);
+            if (!images.isEmpty()) {
+                System.out.println("🗑️ Deleting " + images.size() + " related image(s)");
+                imageRepository.deleteAll(images);
+            }
+            
+            // Step 3: Finally delete the inspection
             inspectionRepository.deleteById(uuid);
-            System.out.println("✅ Successfully deleted inspection: " + id);
+            System.out.println("✅ Successfully deleted inspection and all related records: " + id);
+            
             return ResponseEntity.noContent().build();
+            
         } catch (IllegalArgumentException e) {
-            // If not a valid UUID, inspection IDs are typically UUIDs, so return not found
             System.out.println("❌ Invalid UUID format for inspection ID: " + id);
             return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            System.out.println("❌ Error deleting inspection: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
         }
     }
 }
