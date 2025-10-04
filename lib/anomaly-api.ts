@@ -4,6 +4,7 @@ const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhos
 
 export interface AnomalyDetectionRequest {
   imageUrl: string
+  inspectionId?: string
 }
 
 export interface AnomalyDetectionResponse {
@@ -25,9 +26,10 @@ export interface Detection {
  * Detect anomalies in a thermal image by calling the backend anomaly detection endpoint
  * 
  * @param imageUrl - The URL of the thermal image to analyze
+ * @param inspectionId - Optional inspection ID to update status to "In Progress"
  * @returns Promise with the anomaly detection results or null on error
  */
-export async function detectAnomalies(imageUrl: string): Promise<AnomalyDetectionResponse | null> {
+export async function detectAnomalies(imageUrl: string, inspectionId?: string): Promise<AnomalyDetectionResponse | null> {
   if (!imageUrl || imageUrl.trim() === '') {
     console.error('Image URL is required for anomaly detection')
     return null
@@ -35,14 +37,14 @@ export async function detectAnomalies(imageUrl: string): Promise<AnomalyDetectio
 
   try {
     console.log('🚀 [Anomaly API] Sending request to:', `${BACKEND_BASE_URL}/anomalies/detect`)
-    console.log('📤 [Anomaly API] Request payload:', { imageUrl })
+    console.log('📤 [Anomaly API] Request payload:', { imageUrl, inspectionId })
     
     const response = await fetch(`${BACKEND_BASE_URL}/anomalies/detect`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ imageUrl }),
+      body: JSON.stringify({ imageUrl, inspectionId }),
     })
 
     if (!response.ok) {

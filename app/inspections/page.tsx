@@ -149,8 +149,18 @@ export default function InspectionsPage() {
           const formatDate = (dateValue: any): string => {
             if (!dateValue) return '—'
             try {
-              const date = new Date(dateValue)
-              if (isNaN(date.getTime())) return '—'
+              // Handle truncated ISO format (e.g., "2025-10-03T19:13" -> "2025-10-03T19:13:00")
+              let dateStr = String(dateValue)
+              // If it's a truncated ISO format (ends with T + time without seconds), add :00
+              if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateStr)) {
+                dateStr += ':00'
+              }
+              
+              const date = new Date(dateStr)
+              if (isNaN(date.getTime())) {
+                console.warn('Invalid date value:', dateValue)
+                return '—'
+              }
               return date.toLocaleString('en-US', { 
                 month: 'short', 
                 day: 'numeric', 
@@ -159,7 +169,7 @@ export default function InspectionsPage() {
                 minute: '2-digit'
               })
             } catch (e) {
-              console.error('Date parsing error:', e)
+              console.error('Date parsing error:', e, 'for value:', dateValue)
               return '—'
             }
           }

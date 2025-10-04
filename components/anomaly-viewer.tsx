@@ -10,6 +10,8 @@ import { Loader2, AlertCircle, CheckCircle2, XCircle, Sparkles, ZoomIn, ZoomOut,
 interface AnomalyViewerProps {
   baselineUrl: string
   maintenanceUrl: string
+  inspectionId?: string
+  onAnalysisComplete?: () => void
 }
 
 // Image controls state for zoom and pan
@@ -22,7 +24,7 @@ interface ImageControls {
   dragStartY: number
 }
 
-export function AnomalyViewer({ baselineUrl, maintenanceUrl }: AnomalyViewerProps) {
+export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAnalysisComplete }: AnomalyViewerProps) {
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [anomalyData, setAnomalyData] = useState<AnomalyDetectionResponse | null>(null)
@@ -63,7 +65,11 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl }: AnomalyViewerProp
 
     try {
       console.log("🚀 [Anomaly API] Sending request to:", maintenanceUrl)
-      const result = await detectAnomalies(maintenanceUrl)
+      if (inspectionId) {
+        console.log("📝 [Anomaly API] Including inspection ID:", inspectionId)
+      }
+      
+      const result = await detectAnomalies(maintenanceUrl, inspectionId)
       
       if (result) {
         console.log("✅ [Anomaly API] Response received:")
@@ -74,6 +80,12 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl }: AnomalyViewerProp
         
         setAnomalyData(result)
         setHasAnalyzed(true)
+        
+        // Notify parent component that analysis is complete
+        if (onAnalysisComplete) {
+          console.log("🔄 [Anomaly Viewer] Notifying parent of analysis completion")
+          onAnalysisComplete()
+        }
       } else {
         setError("Failed to detect anomalies. Please try again.")
       }

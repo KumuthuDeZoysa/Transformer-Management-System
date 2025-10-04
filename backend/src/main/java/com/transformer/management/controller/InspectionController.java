@@ -64,6 +64,24 @@ public class InspectionController {
         System.out.println("🔍 InspectionController.getAllInspections() called");
         List<Inspection> inspections = inspectionRepository.findAll();
         System.out.println("📊 Found " + inspections.size() + " inspections");
+        
+        // Ensure all inspections have valid inspectedAt dates and save them
+        boolean needsSave = false;
+        for (Inspection inspection : inspections) {
+            if (inspection.getInspectedAt() == null) {
+                System.out.println("⚠️ Inspection " + inspection.getId() + " has null inspectedAt, fixing it");
+                LocalDateTime fixedDate = inspection.getCreatedAt() != null ? inspection.getCreatedAt() : LocalDateTime.now();
+                inspection.setInspectedAt(fixedDate);
+                inspectionRepository.save(inspection);
+                System.out.println("✅ Fixed and saved inspection " + inspection.getId() + " with date: " + fixedDate);
+                needsSave = true;
+            }
+        }
+        
+        if (needsSave) {
+            System.out.println("📝 Database updated with fixed dates");
+        }
+        
         return inspections;
     }
 
@@ -148,6 +166,10 @@ public class InspectionController {
                     // Fallback to current time if parsing fails
                     inspection.setInspectedAt(LocalDateTime.now());
                 }
+            } else {
+                // If no inspectedAt provided, use current time
+                inspection.setInspectedAt(LocalDateTime.now());
+                System.out.println("ℹ️ No inspectedAt provided, using current time");
             }
             
             // Handle maintenanceDate with proper timezone handling

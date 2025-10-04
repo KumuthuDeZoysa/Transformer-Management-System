@@ -53,6 +53,51 @@ public class AnomalyDetectionService {
     public AnomalyDetectionDTO detectAnomaly(String imageUrl) {
         return detectAnomaly(imageUrl, null, null, null);
     }
+    
+    /**
+     * Detect anomalies with inspection context and automatic status update
+     * 
+     * @param imageUrl The URL of the image to analyze
+     * @param inspectionId The inspection ID to update status for
+     * @return The detection results as AnomalyDetectionDTO
+     */
+    @Transactional
+    public AnomalyDetectionDTO detectAnomalyWithInspection(String imageUrl, UUID inspectionId) {
+        logger.info("🔍 Starting anomaly detection with inspection context: {}", inspectionId);
+        
+        // Update inspection status to "In Progress" before starting detection
+        if (inspectionId != null) {
+            updateInspectionStatus(inspectionId, "In Progress");
+        }
+        
+        // Perform the detection
+        return detectAnomaly(imageUrl, null, null, inspectionId);
+    }
+    
+    /**
+     * Update inspection status
+     * 
+     * @param inspectionId The inspection ID to update
+     * @param status The new status value
+     */
+    private void updateInspectionStatus(UUID inspectionId, String status) {
+        try {
+            logger.info("📝 Updating inspection {} status to: {}", inspectionId, status);
+            
+            var inspection = inspectionRepository.findById(inspectionId);
+            if (inspection.isPresent()) {
+                var insp = inspection.get();
+                insp.setStatus(status);
+                inspectionRepository.save(insp);
+                logger.info("✅ Successfully updated inspection status to: {}", status);
+            } else {
+                logger.warn("⚠️ Inspection not found: {}", inspectionId);
+            }
+        } catch (Exception e) {
+            logger.error("❌ Failed to update inspection status: {}", e.getMessage(), e);
+            // Don't fail the detection if status update fails
+        }
+    }
 
     /**
      * Detect anomalies with full context (transformer, inspection, baseline image)

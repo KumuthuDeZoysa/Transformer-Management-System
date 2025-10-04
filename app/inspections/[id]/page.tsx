@@ -67,6 +67,7 @@ export default function InspectionDetailPage() {
   
   // Anomaly detection states
   const [showAnomalyAnalysis, setShowAnomalyAnalysis] = useState(false)
+  const [hasCompletedAIAnalysis, setHasCompletedAIAnalysis] = useState(false)
 
   useEffect(() => {
     const loadInspection = async () => {
@@ -273,19 +274,42 @@ export default function InspectionDetailPage() {
             img.label && (
               img.label.includes('[maintenance]') && (
                 img.label.includes(inspectionId) ||
-                img.label.includes(inspection.inspection_no || '')
+                !img.label.match(/\[inspection:([a-f0-9-]+)\]/) ||
+                img.label.match(/\[inspection:([a-f0-9-]+)\]/)?.[1] === inspectionId
               )
             )
           )
           
-          setBaselineImages(baseline)
+          setBaselineImages(baseline.slice(0, 1))
           setMaintenanceImages(maintenance)
+          console.log('✅ [Refresh] Complete (Next.js API) - Baseline:', baseline.length > 0 ? '1' : '0', ', Maintenance:', maintenance.length)
         }
       } catch (error) {
-        console.error('❌ [Refresh] Failed to load images:', error)
-        setBaselineImages([])
-        setMaintenanceImages([])
+        console.error('❌ Failed to refresh images via Next.js API:', error)
       }
+    }
+  }
+  
+  // Refresh inspection data (especially status) after anomaly analysis
+  const refreshInspectionStatus = async () => {
+    console.log('🔄 [Refresh] Reloading inspection status:', inspectionId)
+    
+    try {
+      const [inspections] = await Promise.all([
+        fetchInspections(),
+      ])
+      
+      const currentInspection = inspections.find((i: any) => i.id === inspectionId)
+      if (currentInspection) {
+        setInspection(currentInspection)
+        console.log('✅ [Refresh] Inspection status updated:', currentInspection.status)
+      }
+      
+      // Mark AI analysis as complete
+      setHasCompletedAIAnalysis(true)
+      console.log('✅ [Progress] AI Analysis marked as complete')
+    } catch (error) {
+      console.error('❌ [Refresh] Failed to reload inspection status:', error)
     }
   }
 
@@ -947,6 +971,8 @@ export default function InspectionDetailPage() {
                 <AnomalyViewer
                   baselineUrl={getImageUrl(baselineImages[0].url)}
                   maintenanceUrl={getImageUrl(maintenanceImages[maintenanceImages.length - 1].url)}
+                  inspectionId={inspectionId}
+                  onAnalysisComplete={refreshInspectionStatus}
                 />
               </CardContent>
             )}
@@ -989,22 +1015,28 @@ export default function InspectionDetailPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center">
-                    <div className="w-2 h-2 rounded-full bg-yellow-600"></div>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                    hasCompletedAIAnalysis ? 'bg-green-100' : 'bg-yellow-100'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full ${
+                      hasCompletedAIAnalysis ? 'bg-green-600' : 'bg-yellow-600'
+                    }`}></div>
                   </div>
                   <span className="text-sm font-serif">AI Analysis</span>
                 </div>
-                <span className="text-sm text-yellow-600 font-serif">
-                  {imageUploads.some(img => img.status === 'complete') ? "Complete" : 
-                   imageUploads.some(img => img.status === 'analyzing') ? "In Progress" : "Pending"}
+                <span className={`text-sm font-serif ${
+                  hasCompletedAIAnalysis ? 'text-green-600' : 'text-yellow-600'
+                }`}>
+                  {hasCompletedAIAnalysis ? "Complete" : "Pending"}
                 </span>
               </div>
               <div className="w-full bg-muted rounded-full h-1.5 ml-8">
                 <div
-                  className="h-1.5 rounded-full transition-all duration-500 bg-yellow-600"
+                  className={`h-1.5 rounded-full transition-all duration-500 ${
+                    hasCompletedAIAnalysis ? 'bg-green-600' : 'bg-yellow-600'
+                  }`}
                   style={{ 
-                    width: imageUploads.some(img => img.status === 'complete') ? '100%' : 
-                           imageUploads.some(img => img.status === 'analyzing') ? '60%' : '0%'
+                    width: hasCompletedAIAnalysis ? '100%' : '0%'
                   }}
                 ></div>
               </div>

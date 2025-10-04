@@ -32,9 +32,9 @@ public class AnomalyController {
     /**
      * Detect anomalies in a thermal image
      * POST /api/anomalies/detect
-     * Body: { "imageUrl": "<url>" }
+     * Body: { "imageUrl": "<url>", "inspectionId": "<optional-uuid>" }
      * 
-     * @param request The request containing the image URL
+     * @param request The request containing the image URL and optional inspection ID
      * @return The anomaly detection results mapped to our DTO format
      */
     @PostMapping("/detect")
@@ -48,7 +48,23 @@ public class AnomalyController {
         }
         
         try {
-            AnomalyDetectionDTO result = anomalyDetectionService.detectAnomaly(request.getImageUrl());
+            // Parse inspection ID if provided
+            UUID inspectionId = null;
+            if (request.getInspectionId() != null && !request.getInspectionId().trim().isEmpty()) {
+                try {
+                    inspectionId = UUID.fromString(request.getInspectionId());
+                    logger.info("Inspection ID provided: {}", inspectionId);
+                } catch (IllegalArgumentException e) {
+                    logger.warn("Invalid inspection ID format: {}", request.getInspectionId());
+                }
+            }
+            
+            // Perform anomaly detection with inspection context
+            AnomalyDetectionDTO result = anomalyDetectionService.detectAnomalyWithInspection(
+                request.getImageUrl(), 
+                inspectionId
+            );
+            
             logger.info("Successfully detected anomaly for image: {}", request.getImageUrl());
             return ResponseEntity.ok(result);
             
