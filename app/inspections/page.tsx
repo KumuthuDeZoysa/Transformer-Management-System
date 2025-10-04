@@ -33,7 +33,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-1',
     transformerId: 'AZ-8890',
-    inspectionNo: '0013232345',
+    inspectionNo: 'INSP-20250824-0001',
     inspectedDate: '8/24/2025, 11:40:00 AM',
     maintenanceDate: '8/26/2025, 2:30:00 PM',
     status: 'Completed'
@@ -41,7 +41,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-2', 
     transformerId: 'AZ-4613',
-    inspectionNo: '0013232346',
+    inspectionNo: 'INSP-20250823-0001',
     inspectedDate: '8/23/2025, 7:14:00 PM',
     maintenanceDate: '—',
     status: 'Pending'
@@ -49,7 +49,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-3',
     transformerId: 'AZ-4613', 
-    inspectionNo: '0013232341',
+    inspectionNo: 'INSP-20250823-0002',
     inspectedDate: '8/23/2025, 11:28:11 AM',
     maintenanceDate: '—',
     status: 'In Progress'
@@ -57,7 +57,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-4',
     transformerId: 'AZ-8890',
-    inspectionNo: '0013232344',
+    inspectionNo: 'INSP-20250822-0001',
     inspectedDate: '8/22/2025, 3:39:00 PM',
     maintenanceDate: '8/23/2025, 10:15:00 AM',
     status: 'Completed'
@@ -65,7 +65,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-5',
     transformerId: 'AZ-7316',
-    inspectionNo: '0013232343',
+    inspectionNo: 'INSP-20250821-0001',
     inspectedDate: '8/21/2025, 11:17:00 AM',
     maintenanceDate: '—',
     status: 'Pending'
@@ -73,26 +73,10 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-6',
     transformerId: 'AX-8993',
-    inspectionNo: '0013232342',
+    inspectionNo: 'INSP-20250820-0001',
     inspectedDate: '8/20/2025, 10:15:00 AM',
     maintenanceDate: '8/22/2025, 4:45:00 PM',
     status: 'Completed'
-  },
-  {
-    id: 'demo-7',
-    transformerId: 'EN-122A',
-    inspectionNo: '0013232340',
-    inspectedDate: '8/19/2025, 9:30:00 AM',
-    maintenanceDate: '8/21/2025, 1:20:00 PM',
-    status: 'Completed'
-  },
-  {
-    id: 'demo-8',
-    transformerId: 'LP-2567',
-    inspectionNo: '0013232339',
-    inspectedDate: '8/18/2025, 2:45:00 PM',
-    maintenanceDate: '—',
-    status: 'In Progress'
   }
 ]
 
