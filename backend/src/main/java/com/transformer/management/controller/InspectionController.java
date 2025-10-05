@@ -4,15 +4,19 @@ import com.transformer.management.entity.Inspection;
 import com.transformer.management.entity.Transformer;
 import com.transformer.management.repository.InspectionRepository;
 import com.transformer.management.repository.TransformerRepository;
+import com.transformer.management.repository.ImageRepository;
+import com.transformer.management.repository.AnomalyDetectionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 
 @RestController
@@ -25,19 +29,26 @@ public class InspectionController {
 
     @Autowired
     private TransformerRepository transformerRepository;
+    
+    @Autowired
+    private ImageRepository imageRepository;
+    
+    @Autowired
+    private AnomalyDetectionRepository anomalyDetectionRepository;
 
     // Auto-generate inspection number with format: INSP-YYYYMMDD-NNNN
-    private String generateInspectionNumber() {
-        String today = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        String prefix = "INSP-" + today + "-";
+    // YYYYMMDD is based on the inspection date (inspectedAt), not the creation date
+    private String generateInspectionNumber(LocalDateTime inspectedAt) {
+        String inspectionDate = inspectedAt.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String prefix = "INSP-" + inspectionDate + "-";
         
-        // Find the highest sequence number for today
-        List<Inspection> todaysInspections = inspectionRepository.findByInspectionNoStartingWith(prefix);
+        // Find the highest sequence number for inspections on this date
+        List<Inspection> inspectionsOnDate = inspectionRepository.findByInspectionNoStartingWith(prefix);
         
         int nextSequence = 1;
-        if (!todaysInspections.isEmpty()) {
+        if (!inspectionsOnDate.isEmpty()) {
             // Extract sequence numbers and find the maximum
-            int maxSequence = todaysInspections.stream()
+            int maxSequence = inspectionsOnDate.stream()
                 .mapToInt(inspection -> {
                     String inspectionNo = inspection.getInspectionNo();
                     if (inspectionNo != null && inspectionNo.startsWith(prefix)) {
@@ -54,6 +65,7 @@ public class InspectionController {
             nextSequence = maxSequence + 1;
         }
         
+        System.out.println("✅ Generated inspection number: " + prefix + String.format("%04d", nextSequence) + " (for inspection date: " + inspectionDate + ")");
         return prefix + String.format("%04d", nextSequence);
     }
 
@@ -62,6 +74,24 @@ public class InspectionController {
         System.out.println("🔍 InspectionController.getAllInspections() called");
         List<Inspection> inspections = inspectionRepository.findAll();
         System.out.println("📊 Found " + inspections.size() + " inspections");
+        
+        // Ensure all inspections have valid inspectedAt dates and save them
+        boolean needsSave = false;
+        for (Inspection inspection : inspections) {
+            if (inspection.getInspectedAt() == null) {
+                System.out.println("⚠️ Inspection " + inspection.getId() + " has null inspectedAt, fixing it");
+                LocalDateTime fixedDate = inspection.getCreatedAt() != null ? inspection.getCreatedAt() : LocalDateTime.now();
+                inspection.setInspectedAt(fixedDate);
+                inspectionRepository.save(inspection);
+                System.out.println("✅ Fixed and saved inspection " + inspection.getId() + " with date: " + fixedDate);
+                needsSave = true;
+            }
+        }
+        
+        if (needsSave) {
+            System.out.println("📝 Database updated with fixed dates");
+        }
+        
         return inspections;
     }
 
@@ -125,23 +155,49 @@ public class InspectionController {
             Inspection inspection = new Inspection();
             inspection.setTransformer(transformer.get());
             
-            // Auto-generate inspection number if not provided
+            // Handle inspectedAt with proper timezone handling FIRST (needed for inspection number generation)
+            LocalDateTime inspectedAtDateTime;
+            String inspectedAtStr = (String) requestData.get("inspectedAt");
+            if (inspectedAtStr != null) {
+                try {
+                    // Parse ISO string properly handling timezone
+                    Instant instant = Instant.parse(inspectedAtStr);
+                    inspectedAtDateTime = LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
+                    inspection.setInspectedAt(inspectedAtDateTime);
+                    System.out.println("✅ Parsed inspectedAt: " + inspectedAtStr + " -> " + inspectedAtDateTime);
+                } catch (Exception e) {
+                    System.out.println("❌ Failed to parse inspectedAt: " + inspectedAtStr + ", error: " + e.getMessage());
+                    // Fallback to current time if parsing fails
+                    inspectedAtDateTime = LocalDateTime.now();
+                    inspection.setInspectedAt(inspectedAtDateTime);
+                }
+            } else {
+                // If no inspectedAt provided, use current time
+                inspectedAtDateTime = LocalDateTime.now();
+                inspection.setInspectedAt(inspectedAtDateTime);
+                System.out.println("ℹ️ No inspectedAt provided, using current time");
+            }
+            
+            // Auto-generate inspection number if not provided (uses inspectedAt for the date)
             String inspectionNo = (String) requestData.get("inspectionNo");
             if (inspectionNo == null || inspectionNo.trim().isEmpty()) {
-                inspectionNo = generateInspectionNumber();
+                inspectionNo = generateInspectionNumber(inspectedAtDateTime);
             }
             inspection.setInspectionNo(inspectionNo);
             
-            // Handle inspectedAt
-            String inspectedAtStr = (String) requestData.get("inspectedAt");
-            if (inspectedAtStr != null) {
-                inspection.setInspectedAt(java.time.LocalDateTime.parse(inspectedAtStr.replace("Z", "")));
-            }
-            
-            // Handle maintenanceDate
+            // Handle maintenanceDate with proper timezone handling
             String maintenanceDateStr = (String) requestData.get("maintenanceDate");
             if (maintenanceDateStr != null) {
-                inspection.setMaintenanceDate(java.time.LocalDateTime.parse(maintenanceDateStr.replace("Z", "")));
+                try {
+                    // Parse ISO string properly handling timezone
+                    Instant instant = Instant.parse(maintenanceDateStr);
+                    LocalDateTime localDateTime = LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault());
+                    inspection.setMaintenanceDate(localDateTime);
+                    System.out.println("✅ Parsed maintenanceDate: " + maintenanceDateStr + " -> " + localDateTime);
+                } catch (Exception e) {
+                    System.out.println("❌ Failed to parse maintenanceDate: " + maintenanceDateStr + ", error: " + e.getMessage());
+                    // Don't set a fallback for maintenance date as it's optional
+                }
             }
             
             inspection.setStatus((String) requestData.get("status"));
@@ -225,23 +281,48 @@ public class InspectionController {
     }
 
     @DeleteMapping("/{id}")
+    @Transactional
     public ResponseEntity<Void> deleteInspection(@PathVariable String id) {
         System.out.println("🗑️ Attempting to delete inspection with ID: " + id);
         
-        // Try to parse as UUID first
         try {
             UUID uuid = UUID.fromString(id);
+            
+            // Check if inspection exists
             if (!inspectionRepository.existsById(uuid)) {
                 System.out.println("❌ Inspection not found: " + id);
                 return ResponseEntity.notFound().build();
             }
+            
+            // Step 1: Delete related anomaly detections first
+            List<com.transformer.management.entity.AnomalyDetection> anomalies = 
+                anomalyDetectionRepository.findByInspectionId(uuid);
+            if (!anomalies.isEmpty()) {
+                System.out.println("🗑️ Deleting " + anomalies.size() + " related anomaly detection(s)");
+                anomalyDetectionRepository.deleteAll(anomalies);
+            }
+            
+            // Step 2: Delete related images
+            List<com.transformer.management.entity.Image> images = 
+                imageRepository.findByInspectionId(uuid);
+            if (!images.isEmpty()) {
+                System.out.println("🗑️ Deleting " + images.size() + " related image(s)");
+                imageRepository.deleteAll(images);
+            }
+            
+            // Step 3: Finally delete the inspection
             inspectionRepository.deleteById(uuid);
-            System.out.println("✅ Successfully deleted inspection: " + id);
+            System.out.println("✅ Successfully deleted inspection and all related records: " + id);
+            
             return ResponseEntity.noContent().build();
+            
         } catch (IllegalArgumentException e) {
-            // If not a valid UUID, inspection IDs are typically UUIDs, so return not found
             System.out.println("❌ Invalid UUID format for inspection ID: " + id);
             return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            System.out.println("❌ Error deleting inspection: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
         }
     }
 }

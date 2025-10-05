@@ -3,6 +3,7 @@ package com.transformer.management.entity;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -29,9 +30,11 @@ public class Inspection {
     @Column(name = "inspection_no")
     private String inspectionNo;
 
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     @Column(name = "inspected_at", nullable = false)
     private LocalDateTime inspectedAt = LocalDateTime.now();
 
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     @Column(name = "maintenance_date")
     private LocalDateTime maintenanceDate;
 
@@ -41,9 +44,11 @@ public class Inspection {
     @Column(name = "notes")
     private String notes;
 
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 

@@ -33,7 +33,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-1',
     transformerId: 'AZ-8890',
-    inspectionNo: '0013232345',
+    inspectionNo: 'INSP-20250824-0001',
     inspectedDate: '8/24/2025, 11:40:00 AM',
     maintenanceDate: '8/26/2025, 2:30:00 PM',
     status: 'Completed'
@@ -41,7 +41,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-2', 
     transformerId: 'AZ-4613',
-    inspectionNo: '0013232346',
+    inspectionNo: 'INSP-20250823-0001',
     inspectedDate: '8/23/2025, 7:14:00 PM',
     maintenanceDate: '—',
     status: 'Pending'
@@ -49,7 +49,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-3',
     transformerId: 'AZ-4613', 
-    inspectionNo: '0013232341',
+    inspectionNo: 'INSP-20250823-0002',
     inspectedDate: '8/23/2025, 11:28:11 AM',
     maintenanceDate: '—',
     status: 'In Progress'
@@ -57,7 +57,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-4',
     transformerId: 'AZ-8890',
-    inspectionNo: '0013232344',
+    inspectionNo: 'INSP-20250822-0001',
     inspectedDate: '8/22/2025, 3:39:00 PM',
     maintenanceDate: '8/23/2025, 10:15:00 AM',
     status: 'Completed'
@@ -65,7 +65,7 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-5',
     transformerId: 'AZ-7316',
-    inspectionNo: '0013232343',
+    inspectionNo: 'INSP-20250821-0001',
     inspectedDate: '8/21/2025, 11:17:00 AM',
     maintenanceDate: '—',
     status: 'Pending'
@@ -73,26 +73,10 @@ const DEMO_INSPECTIONS: Row[] = [
   {
     id: 'demo-6',
     transformerId: 'AX-8993',
-    inspectionNo: '0013232342',
+    inspectionNo: 'INSP-20250820-0001',
     inspectedDate: '8/20/2025, 10:15:00 AM',
     maintenanceDate: '8/22/2025, 4:45:00 PM',
     status: 'Completed'
-  },
-  {
-    id: 'demo-7',
-    transformerId: 'EN-122A',
-    inspectionNo: '0013232340',
-    inspectedDate: '8/19/2025, 9:30:00 AM',
-    maintenanceDate: '8/21/2025, 1:20:00 PM',
-    status: 'Completed'
-  },
-  {
-    id: 'demo-8',
-    transformerId: 'LP-2567',
-    inspectionNo: '0013232339',
-    inspectedDate: '8/18/2025, 2:45:00 PM',
-    maintenanceDate: '—',
-    status: 'In Progress'
   }
 ]
 
@@ -124,7 +108,7 @@ export default function InspectionsPage() {
         
         // First check if backend is accessible
         const healthStatus = await backendApi.health.checkBackendStatus()
-        console.log('🏥 Backend health check:', healthStatus)
+        console.log('Backend health check:', healthStatus)
         
         if (healthStatus.status === 'unhealthy') {
           console.warn('⚠️ Backend is not accessible, falling back to demo data only')
@@ -137,21 +121,52 @@ export default function InspectionsPage() {
           backendApi.inspections.getAll(),
           backendApi.transformers.getAll(),
         ])
-        console.log('📊 Backend returned:', { inspections: ins.length, transformers: transformers.length })
+        console.log('Backend returned:', { inspections: ins.length, transformers: transformers.length })
         
         const tMap = new Map<string, DbTransformer>()
         transformers.forEach((t) => tMap.set(t.id, t))
         setTransformerMap(tMap)
         setTransformers(transformers)
         
-        const mapped: Row[] = ins.map((i) => ({
-          id: i.id,
-          transformerId: i.transformer?.id ? (tMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
-          inspectionNo: i.inspectionNo || '—',
-          inspectedDate: new Date(i.inspectedAt).toLocaleString(),
-          maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString() : '—',
-          status: i.status,
-        }))
+        const mapped: Row[] = ins.map((i) => {
+          // Helper to format dates safely
+          const formatDate = (dateValue: any): string => {
+            if (!dateValue) return '—'
+            try {
+              // Handle truncated ISO format (e.g., "2025-10-03T19:13" -> "2025-10-03T19:13:00")
+              let dateStr = String(dateValue)
+              // If it's a truncated ISO format (ends with T + time without seconds), add :00
+              if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateStr)) {
+                dateStr += ':00'
+              }
+              
+              const date = new Date(dateStr)
+              if (isNaN(date.getTime())) {
+                console.warn('Invalid date value:', dateValue)
+                return '—'
+              }
+              return date.toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              })
+            } catch (e) {
+              console.error('Date parsing error:', e, 'for value:', dateValue)
+              return '—'
+            }
+          }
+
+          return {
+            id: i.id,
+            transformerId: i.transformer?.id ? (tMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
+            inspectionNo: i.inspectionNo || '—',
+            inspectedDate: formatDate(i.inspectedAt),
+            maintenanceDate: formatDate(i.maintenanceDate),
+            status: i.status,
+          }
+        })
 
         console.log('📊 Mapped inspections from backend:', mapped)
 
@@ -302,8 +317,20 @@ export default function InspectionsPage() {
         id: i.id,
         transformerId: i.transformer?.id ? (transformerMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
         inspectionNo: i.inspectionNo || '—',
-        inspectedDate: new Date(i.inspectedAt).toLocaleString(),
-        maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString() : '—',
+        inspectedDate: new Date(i.inspectedAt).toLocaleString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        maintenanceDate: i.maintenanceDate ? new Date(i.maintenanceDate).toLocaleString('en-US', { 
+          month: 'short', 
+          day: 'numeric', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }) : '—',
         status: i.status,
       }))
 
