@@ -1,6 +1,22 @@
 # Transformer Management System
 
-A full-stack application for managing electrical transformers, inspections, and thermal images. The project includes a modern Next.js front end and a Java Spring Boot back end exposing REST endpoints. PostgreSQL (via Supabase) is used as the primary data store, and Cloudinary provides image hosting.
+A full-stack application for managing electrical transformers- Images
+  - Cloudinary-powered image upload (multipart/form-data)
+  - Image gallery with filters, search, preview modal, and download
+  - Images tagged with type (baseline/maintenance) and environmental conditions (sunny, cloudy, rainy)
+  - Metadata captured: Upload date/time, type, and uploader.
+
+- Anomaly Detection
+  - AI-powered thermal image analysis using PatchCore model
+  - Automatic classification of six fault types with confidence scoring
+  - Color-coded bounding boxes for visual anomaly identification
+  - Uncertain detection flagging (confidence < 60%) for manual review
+  - Complete detection history and metadata persistence
+  - Interactive anomaly viewer with detailed inspection metrics
+
+- Settings panel
+  - Displays Transformer database schema and shows current rows
+  - One-click seed for sample transformers from the UIions, and thermal images. The project includes a modern Next.js front end and a Java Spring Boot back end exposing REST endpoints. PostgreSQL (via Supabase) is used as the primary data store, and Cloudinary provides image hosting.
 
 ## Contents
 
@@ -38,6 +54,44 @@ This application supports day‑to‑day transformer management: create and upda
 
 - Storage
   - Cloudinary for image uploads
+
+## Anomaly Detection Approach
+
+The system incorporates an intelligent thermal image anomaly detection pipeline to identify faults in transformers:
+
+### Detection Pipeline
+- **PatchCore Model**: Trained on normal thermal images using a Wide ResNet-50 backbone with multi-scale feature extraction (layer2, layer3)
+- **Memory Bank**: Builds a feature memory bank from normal images; detects anomalies as deviations from learned normal patterns
+- **Deployment**: Containerized pipeline deployed to Hugging Face Spaces as a scalable Flask API
+
+### Classification System
+The system uses OpenCV color-based analysis to classify six fault types:
+
+| Fault Type | Detection Criteria | Severity |
+|------------|-------------------|----------|
+| **Normal** | >80% black/blue coverage | Normal |
+| **Loose Joint (Faulty)** | >10% red/orange in center region | Critical |
+| **Loose Joint (Potential)** | >10% yellow in center region | Warning |
+| **Point Overload (Faulty)** | Small red/orange spots (120px - 5% of image) | Critical |
+| **Point Overload (Potential)** | Small yellow spots (1000px - 5% of image) | Warning |
+| **Full Wire Overload** | >70% red/orange/yellow coverage | Warning |
+
+### Confidence Scoring
+- **Threshold**: Detections with confidence < 60% (0.6) are flagged as "uncertain" and recommended for manual verification
+- **Factors**: Coverage percentage, color intensity, size ratio, and label-specific base confidence
+- **Post-Processing**: Non-maximum suppression, overlapping box filtering, and proximity-based merging
+
+### Visual Feedback
+- Color-coded bounding boxes based on severity and confidence:
+  - **Red spectrum**: Critical faults (intensity increases with confidence)
+  - **Yellow/Orange**: Warnings and potential issues
+  - **Green**: Normal conditions
+- High-confidence detections receive corner markers for emphasis
+
+### API Integration
+- Backend service calls external anomaly detection API with thermal image URLs
+- Results stored in `anomaly_detections` table with full metadata (detection coordinates, confidence scores, processing time)
+- Frontend displays annotated images with interactive anomaly viewer showing detection details
 
 ## Implemented features
 
