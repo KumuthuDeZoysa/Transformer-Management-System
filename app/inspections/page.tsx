@@ -108,7 +108,7 @@ export default function InspectionsPage() {
         
         // First check if backend is accessible
         const healthStatus = await backendApi.health.checkBackendStatus()
-        console.log('🏥 Backend health check:', healthStatus)
+        console.log('Backend health check:', healthStatus)
         
         if (healthStatus.status === 'unhealthy') {
           console.warn('⚠️ Backend is not accessible, falling back to demo data only')
@@ -121,7 +121,7 @@ export default function InspectionsPage() {
           backendApi.inspections.getAll(),
           backendApi.transformers.getAll(),
         ])
-        console.log('📊 Backend returned:', { inspections: ins.length, transformers: transformers.length })
+        console.log('Backend returned:', { inspections: ins.length, transformers: transformers.length })
         
         const tMap = new Map<string, DbTransformer>()
         transformers.forEach((t) => tMap.set(t.id, t))

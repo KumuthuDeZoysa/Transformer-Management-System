@@ -152,7 +152,7 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
 
   // Image control functions for baseline
   const handleBaselineZoomIn = () => {
-    setBaselineControls(prev => ({ ...prev, scale: Math.min(prev.scale + 0.25, 3) }))
+    setBaselineControls(prev => ({ ...prev, scale: Math.min(prev.scale + 0.25, 8) }))
   }
   
   const handleBaselineZoomOut = () => {
@@ -195,7 +195,7 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
 
   // Image control functions for maintenance
   const handleMaintenanceZoomIn = () => {
-    setMaintenanceControls(prev => ({ ...prev, scale: Math.min(prev.scale + 0.25, 3) }))
+    setMaintenanceControls(prev => ({ ...prev, scale: Math.min(prev.scale + 0.25, 5) }))
   }
   
   const handleMaintenanceZoomOut = () => {
