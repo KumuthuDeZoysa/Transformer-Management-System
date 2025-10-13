@@ -7,6 +7,7 @@ import java.util.List;
  * Maps the external API response to a more user-friendly format
  */
 public class AnomalyDetectionDTO {
+    private String originalImage;     // Original image URL (without annotations)
     private String overlayImage;      // boxed_url from external API
     private String heatmapImage;      // filtered_url from external API
     private String maskImage;         // mask_url from external API
@@ -26,6 +27,14 @@ public class AnomalyDetectionDTO {
     }
 
     // Getters and setters
+    public String getOriginalImage() {
+        return originalImage;
+    }
+
+    public void setOriginalImage(String originalImage) {
+        this.originalImage = originalImage;
+    }
+
     public String getOverlayImage() {
         return overlayImage;
     }

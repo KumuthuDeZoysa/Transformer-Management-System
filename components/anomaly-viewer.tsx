@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react"
 import { detectAnomalies, type AnomalyDetectionResponse } from "@/lib/anomaly-api"
+import { CanvasAnnotationEditor } from "@/components/canvas-annotation-editor"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -389,87 +390,77 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
               </div>
             </div>
 
-            {/* Maintenance Image */}
+            {/* Maintenance Image - Interactive Annotation Editor */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-sm text-muted-foreground">
-                  Maintenance Image (Current)
-                  {hasAnalyzed && <span className="ml-2 text-xs text-blue-600">• Annotated</span>}
-                </h3>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={handleMaintenanceZoomIn}
-                    title="Zoom In"
-                  >
-                    <ZoomIn className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={handleMaintenanceZoomOut}
-                    title="Zoom Out"
-                  >
-                    <ZoomOut className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={handleMaintenanceReset}
-                    title="Reset View"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-              <div 
-                ref={maintenanceImageRef}
-                className="relative bg-muted rounded-lg overflow-hidden border"
-                style={{ 
-                  height: '400px',
-                  cursor: maintenanceControls.isDragging ? 'grabbing' : 'grab'
-                }}
-                onMouseDown={handleMaintenanceMouseDown}
-                onMouseMove={handleMaintenanceMouseMove}
-                onMouseUp={handleMaintenanceMouseUp}
-                onMouseLeave={handleMaintenanceMouseUp}
-              >
-                <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1 z-10">
-                  <Move className="h-3 w-3" />
-                  <span>Click & Drag to Pan • {(maintenanceControls.scale * 100).toFixed(0)}%</span>
-                </div>
-                <img
-                  src={hasAnalyzed && anomalyData ? anomalyData.overlayImage : maintenanceUrl}
-                  alt="Maintenance thermal image"
-                  className="absolute top-1/2 left-1/2 select-none"
-                  style={{
-                    transform: `translate(-50%, -50%) translate(${maintenanceControls.translateX}px, ${maintenanceControls.translateY}px) scale(${maintenanceControls.scale})`,
-                    transition: maintenanceControls.isDragging ? 'none' : 'transform 0.2s ease-out',
-                    pointerEvents: 'none',
-                    maxWidth: '95%',
-                    maxHeight: '95%',
-                    width: 'auto',
-                    height: 'auto',
-                    objectFit: 'contain'
+              <h3 className="font-semibold text-sm text-muted-foreground">
+                Maintenance Image (Current)
+                {hasAnalyzed && <span className="ml-2 text-xs text-blue-600">• Interactive Annotation</span>}
+              </h3>
+              
+              {!hasAnalyzed ? (
+                // Show original image before analysis
+                <div 
+                  ref={maintenanceImageRef}
+                  className="relative bg-muted rounded-lg overflow-hidden border"
+                  style={{ 
+                    height: '400px',
+                    cursor: maintenanceControls.isDragging ? 'grabbing' : 'grab'
                   }}
-                  onError={(e) => {
-                    e.currentTarget.src = "/placeholder.svg"
-                  }}
-                  draggable={false}
-                />
-                {analyzing && (
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
-                    <div className="text-center text-white">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
-                      <p className="text-sm">Analyzing thermal patterns...</p>
-                    </div>
+                  onMouseDown={handleMaintenanceMouseDown}
+                  onMouseMove={handleMaintenanceMouseMove}
+                  onMouseUp={handleMaintenanceMouseUp}
+                  onMouseLeave={handleMaintenanceMouseUp}
+                >
+                  <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1 z-10">
+                    <Move className="h-3 w-3" />
+                    <span>Click & Drag to Pan • {(maintenanceControls.scale * 100).toFixed(0)}%</span>
                   </div>
-                )}
-              </div>
+                  <img
+                    src={maintenanceUrl}
+                    alt="Maintenance thermal image"
+                    className="absolute top-1/2 left-1/2 select-none"
+                    style={{
+                      transform: `translate(-50%, -50%) translate(${maintenanceControls.translateX}px, ${maintenanceControls.translateY}px) scale(${maintenanceControls.scale})`,
+                      transition: maintenanceControls.isDragging ? 'none' : 'transform 0.2s ease-out',
+                      pointerEvents: 'none',
+                      maxWidth: '95%',
+                      maxHeight: '95%',
+                      width: 'auto',
+                      height: 'auto',
+                      objectFit: 'contain'
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.src = "/placeholder.svg"
+                    }}
+                    draggable={false}
+                  />
+                  {analyzing && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20">
+                      <div className="text-center text-white">
+                        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+                        <p className="text-sm">Analyzing thermal patterns...</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Show interactive annotation editor after analysis
+                <div className="h-full">
+                  <CanvasAnnotationEditor
+                    imageUrl={anomalyData?.originalImage || maintenanceUrl}
+                    imageId={inspectionId || 'temp-id'}
+                    userId="admin"
+                    initialDetections={anomalyData?.detections || []}
+                    compact={true}
+                    onSave={(annotations: any) => {
+                      console.log('✅ Annotations saved:', annotations)
+                      if (onAnalysisComplete) {
+                        onAnalysisComplete()
+                      }
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

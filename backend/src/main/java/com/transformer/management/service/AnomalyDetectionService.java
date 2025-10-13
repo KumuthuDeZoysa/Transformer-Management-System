@@ -286,6 +286,13 @@ public class AnomalyDetectionService {
     }
 
     /**
+     * Get a specific detection by ID
+     */
+    public AnomalyDetection getDetectionById(UUID detectionId) {
+        return anomalyDetectionRepository.findById(detectionId).orElse(null);
+    }
+
+    /**
      * Get all detections within a date range
      */
     public List<AnomalyDetection> getDetectionsByDateRange(LocalDateTime startDate, LocalDateTime endDate) {

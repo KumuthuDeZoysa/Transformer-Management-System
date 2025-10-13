@@ -82,7 +82,14 @@ public class HuggingFaceAnomalyEngine implements AnomalyDetectionEngine {
             Map<String, Object> responseBody = response.getBody();
             
             // Map response to DTO
-            return mapResponseToDTO(responseBody);
+            AnomalyDetectionDTO dto = mapResponseToDTO(responseBody);
+            
+            // If original_url is not in the response, use the input imageUrl
+            if (dto.getOriginalImage() == null || dto.getOriginalImage().isEmpty()) {
+                dto.setOriginalImage(imageUrl);
+            }
+            
+            return dto;
             
         } catch (RestClientException e) {
             logger.error("HuggingFace engine error calling external API: {}", e.getMessage(), e);
@@ -111,6 +118,7 @@ public class HuggingFaceAnomalyEngine implements AnomalyDetectionEngine {
         AnomalyDetectionDTO dto = new AnomalyDetectionDTO();
 
         // Extract image URLs
+        dto.setOriginalImage((String) responseBody.get("original_url")); // Original image without annotations
         dto.setOverlayImage((String) responseBody.get("boxed_url"));
         dto.setHeatmapImage((String) responseBody.get("filtered_url"));
         dto.setMaskImage((String) responseBody.get("mask_url"));

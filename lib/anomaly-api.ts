@@ -9,6 +9,7 @@ export interface AnomalyDetectionRequest {
 
 export interface AnomalyDetectionResponse {
   // Mapped response from backend
+  originalImage: string     // Original image without annotations
   overlayImage: string      // Image with bounding boxes drawn
   heatmapImage: string      // Filtered/heatmap visualization
   maskImage: string         // Segmentation mask
