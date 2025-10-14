@@ -30,6 +30,8 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
   const [error, setError] = useState<string | null>(null)
   const [anomalyData, setAnomalyData] = useState<AnomalyDetectionResponse | null>(null)
   const [hasAnalyzed, setHasAnalyzed] = useState(false)
+  const [currentBoxes, setCurrentBoxes] = useState<any[]>([]) // Track current bounding boxes in real-time
+  const [selectedBoxIndex, setSelectedBoxIndex] = useState<number | undefined>(undefined) // Track which box to select
   
   // Zoom and pan controls for baseline image
   const [baselineControls, setBaselineControls] = useState<ImageControls>({
@@ -120,9 +122,9 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
     } else if (lowerType.includes('potential')) {
       return { severity: 'Warning', category: type.replace(/\(potential\)/gi, '').trim() }
     } else if (lowerType.includes('tiny')) {
-      return { severity: 'Minor', category: type }
+      return { severity: 'Uncertain', category: type }
     }
-    return { severity: 'Unknown', category: type }
+    return { severity: 'Warning', category: type } // Default to Warning instead of Unknown
   }
   
   // Calculate anomaly size in pixels
@@ -452,6 +454,11 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
                     userId="admin"
                     initialDetections={anomalyData?.detections || []}
                     compact={true}
+                    selectedBoxIndex={selectedBoxIndex}
+                    onBoxesChange={(boxes) => {
+                      // Update current boxes in real-time (without saving to backend)
+                      setCurrentBoxes(boxes)
+                    }}
                     onSave={(annotations: any) => {
                       console.log('✅ Annotations saved:', annotations)
                       if (onAnalysisComplete) {
@@ -467,7 +474,7 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
       </Card>
 
       {/* Detection Results */}
-      {hasAnalyzed && anomalyData && anomalyData.detections.length > 0 && (
+      {hasAnalyzed && currentBoxes.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="font-sans">Detected Anomalies</CardTitle>
@@ -477,24 +484,47 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {anomalyData.detections.map((detection, index) => {
-                const confidenceSeverity = getSeverity(detection.confidence)
-                const badgeVariant = getBadgeVariant(detection.confidence)
-                const { severity, category } = extractSeverity(detection.type)
-                const size = calculateSize(detection.bbox)
-                const uncertain = isUncertain(detection.confidence)
+              {currentBoxes.map((box, index) => {
+                const confidenceSeverity = getSeverity(box.confidence || 0)
+                const badgeVariant = getBadgeVariant(box.confidence || 0)
+                // Use severity from box if available (user-created), otherwise extract from label (AI)
+                const { severity, category } = box.severity 
+                  ? { severity: box.severity, category: box.label }
+                  : extractSeverity(box.label)
+                const uncertain = isUncertain(box.confidence || 0)
+                const boxNumber = index + 1 // Box number for correlation with canvas
                 
                 return (
                   <div
                     key={index}
-                    className={`flex items-start justify-between p-4 rounded-lg transition-colors border-2 ${
+                    className={`flex items-start gap-3 justify-between p-4 rounded-lg transition-colors border-2 ${
                       uncertain 
                         ? 'bg-yellow-50 border-yellow-300 dark:bg-yellow-950 dark:border-yellow-700' 
                         : 'bg-muted/50 border-transparent hover:bg-muted'
                     }`}
                   >
-                    <div className="flex-1 space-y-3">
-                      {/* Header Row */}
+                    {/* Box Number Badge - Clickable */}
+                    <div className="flex-shrink-0">
+                      <div 
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md cursor-pointer hover:scale-110 transition-transform"
+                        style={{ 
+                          backgroundColor: severity === 'Critical' ? '#ff2b2bff' : 
+                                         severity === 'Warning' ? '#fd9207ff' : 
+                                         '#fded05ff' 
+                        }}
+                        onClick={() => {
+                          console.log('🎯 Selecting box:', index, boxNumber)
+                          setSelectedBoxIndex(index)
+                          // Reset after a brief moment so it can be clicked again
+                          setTimeout(() => setSelectedBoxIndex(undefined), 100)
+                        }}
+                        title="Click to select and edit this bounding box"
+                      >
+                        {boxNumber}
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1 space-y-2">{/* Priority Level & Source Type */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge 
                           variant={
@@ -506,7 +536,19 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
                         >
                           {severity}
                         </Badge>
-                        <span className="font-semibold text-base">{category}</span>
+                        
+                        {/* AI vs User Created Badge */}
+                        {box.isAI ? (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-700 flex items-center gap-1">
+                            <Sparkles className="h-3 w-3" />
+                            AI Detected
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 dark:bg-green-950 dark:text-green-300 dark:border-green-700">
+                            👤 User Created
+                          </Badge>
+                        )}
+                        
                         {uncertain && (
                           <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-400 flex items-center gap-1">
                             <AlertCircle className="h-3 w-3" />
@@ -515,88 +557,17 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
                         )}
                       </div>
 
-                      {/* Metadata Grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                        {/* Confidence Score */}
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-muted-foreground">Confidence Score:</span>
-                            <Badge variant={badgeVariant} className="font-mono text-xs">
-                              {(detection.confidence * 100).toFixed(1)}%
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Raw: {detection.confidence.toFixed(4)} • Level: {confidenceSeverity}
-                          </div>
-                          {uncertain && (
-                            <div className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">
-                              ⚠️ Low confidence - manual verification recommended
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Pixel Coordinates */}
-                        <div className="space-y-1">
-                          <span className="font-semibold text-muted-foreground block">Pixel Coordinates:</span>
-                          <div className="font-mono text-xs space-x-3">
-                            <span>X: {detection.bbox[0]}</span>
-                            <span>Y: {detection.bbox[1]}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Top-left corner position in image
-                          </div>
-                        </div>
-
-                        {/* Anomaly Size */}
-                        <div className="space-y-1">
-                          <span className="font-semibold text-muted-foreground block">Anomaly Size:</span>
-                          <div className="font-mono text-xs">
-                            {size.width} × {size.height} px ({size.area.toLocaleString()} px²)
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Bounding box dimensions
-                          </div>
-                        </div>
-
-                        {/* Severity Classification */}
-                        <div className="space-y-1">
-                          <span className="font-semibold text-muted-foreground block">Severity Classification:</span>
-                          <div className="flex items-center gap-2">
-                            {severity === 'Critical' && (
-                              <>
-                                <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                                <span className="text-sm font-medium text-red-700 dark:text-red-400">Critical - Immediate Action</span>
-                              </>
-                            )}
-                            {severity === 'Warning' && (
-                              <>
-                                <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                                <span className="text-sm font-medium text-orange-700 dark:text-orange-400">Warning - Monitor Closely</span>
-                              </>
-                            )}
-                            {severity === 'Minor' && (
-                              <>
-                                <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                                <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Minor - Low Priority</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
+                      {/* Anomaly Label */}
+                      <div>
+                        <span className="font-semibold text-base">{category}</span>
                       </div>
 
-                      {/* Full Bounding Box Info */}
-                      <div className="pt-2 border-t border-border/50">
-                        <details className="text-xs">
-                          <summary className="cursor-pointer font-semibold text-muted-foreground hover:text-foreground">
-                            Technical Details
-                          </summary>
-                          <div className="mt-2 space-y-1 font-mono text-muted-foreground">
-                            <div>Bounding Box: [{detection.bbox.join(', ')}]</div>
-                            <div>Format: [x, y, width, height]</div>
-                            <div>Detection Index: #{index + 1}</div>
-                            <div>Original Type: {detection.type}</div>
-                          </div>
-                        </details>
+                      {/* Confidence Score */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">Confidence:</span>
+                        <Badge variant={badgeVariant} className="font-mono text-xs">
+                          {((box.confidence || 0) * 100).toFixed(1)}%
+                        </Badge>
                       </div>
                     </div>
                   </div>
@@ -609,24 +580,24 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
               <h4 className="font-semibold mb-3">Detection Summary</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="text-center p-3 bg-muted/30 rounded">
-                  <div className="text-2xl font-bold">{anomalyData.detections.length}</div>
+                  <div className="text-2xl font-bold">{currentBoxes.length}</div>
                   <div className="text-muted-foreground">Total Detected</div>
                 </div>
                 <div className="text-center p-3 bg-red-50 dark:bg-red-950 rounded">
                   <div className="text-2xl font-bold text-red-600">
-                    {anomalyData.detections.filter(d => extractSeverity(d.type).severity === 'Critical').length}
+                    {currentBoxes.filter(b => extractSeverity(b.label).severity === 'Critical').length}
                   </div>
                   <div className="text-muted-foreground">Critical</div>
                 </div>
                 <div className="text-center p-3 bg-orange-50 dark:bg-orange-950 rounded">
                   <div className="text-2xl font-bold text-orange-600">
-                    {anomalyData.detections.filter(d => extractSeverity(d.type).severity === 'Warning').length}
+                    {currentBoxes.filter(b => extractSeverity(b.label).severity === 'Warning').length}
                   </div>
                   <div className="text-muted-foreground">Warnings</div>
                 </div>
                 <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-950 rounded">
                   <div className="text-2xl font-bold text-yellow-600">
-                    {anomalyData.detections.filter(d => isUncertain(d.confidence)).length}
+                    {currentBoxes.filter(b => isUncertain(b.confidence || 0)).length}
                   </div>
                   <div className="text-muted-foreground">Uncertain</div>
                 </div>
@@ -637,7 +608,7 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
       )}
 
       {/* No Anomalies Message */}
-      {hasAnalyzed && anomalyData && anomalyData.detections.length === 0 && (
+      {hasAnalyzed && currentBoxes.length === 0 && (
         <Card className="border-green-200 bg-green-50 dark:bg-green-950 dark:border-green-800">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">

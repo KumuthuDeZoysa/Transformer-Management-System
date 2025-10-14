@@ -7,6 +7,21 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { 
   Save, 
   Trash2, 
@@ -15,7 +30,8 @@ import {
   Redo,
   ZoomIn,
   ZoomOut,
-  RotateCcw
+  RotateCcw,
+  Plus
 } from "lucide-react"
 
 interface BoundingBox {
@@ -26,6 +42,7 @@ interface BoundingBox {
   height: number
   label: string
   confidence?: number
+  severity?: 'Critical' | 'Warning' | 'Uncertain' // Priority level
   color: string
   action: 'added' | 'edited' | 'deleted' | 'confirmed'
   isAI?: boolean
@@ -41,6 +58,8 @@ interface CanvasAnnotationEditorProps {
     confidence: number
   }>
   onSave?: (annotations: AnnotationDTO[]) => void
+  onBoxesChange?: (boxes: BoundingBox[]) => void // Real-time box updates
+  selectedBoxIndex?: number // Index of box to select from parent
   compact?: boolean
 }
 
@@ -50,6 +69,8 @@ export function CanvasAnnotationEditor({
   userId = 'admin',
   initialDetections = [],
   onSave,
+  onBoxesChange,
+  selectedBoxIndex,
   compact = false
 }: CanvasAnnotationEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -62,7 +83,7 @@ export function CanvasAnnotationEditor({
   const [isResizing, setIsResizing] = useState(false)
   const [resizeHandle, setResizeHandle] = useState<string | null>(null)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [currentLabel, setCurrentLabel] = useState("Unknown")
+  const [currentLabel, setCurrentLabel] = useState("New Warning")
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
@@ -72,6 +93,13 @@ export function CanvasAnnotationEditor({
   const [saving, setSaving] = useState(false)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [imageSize, setImageSize] = useState({ width: 800, height: 600 })
+  
+  // New box creation dialog states
+  const [showNewBoxDialog, setShowNewBoxDialog] = useState(false)
+  const [newBoxLabel, setNewBoxLabel] = useState("")
+  const [newBoxSeverity, setNewBoxSeverity] = useState<"Critical" | "Warning">("Warning")
+  const [newBoxConfidence, setNewBoxConfidence] = useState<number>(100)
+  const [isDrawingNewBox, setIsDrawingNewBox] = useState(false)
 
   // Load image
   useEffect(() => {
@@ -118,11 +146,38 @@ export function CanvasAnnotationEditor({
     }
   }, [initialDetections, boxes.length])
 
-  // Get color based on anomaly severity/type
+  // Notify parent component when boxes change (real-time updates)
+  useEffect(() => {
+    if (onBoxesChange) {
+      onBoxesChange(boxes)
+    }
+  }, [boxes, onBoxesChange])
+
+  // Select box when parent requests it via selectedBoxIndex
+  useEffect(() => {
+    if (selectedBoxIndex !== undefined && selectedBoxIndex >= 0 && selectedBoxIndex < boxes.length) {
+      const box = boxes[selectedBoxIndex]
+      setSelectedId(box.id)
+      console.log('📍 Selected box from parent:', selectedBoxIndex, box.id)
+    }
+  }, [selectedBoxIndex, boxes])
+
+  // Get color based on severity level determined by confidence
   const getColorBySeverity = (label: string, confidence?: number): string => {
+    // Primary color scheme based on confidence value as specified:
+    // Red: High Severity (≥0.8)
+    // Orange: Medium Severity (≥0.5)
+    // Yellow: Low Severity (<0.5)
+    if (confidence !== undefined) {
+      if (confidence >= 0.8) return '#ff2b2bff' // Red - High Severity
+      if (confidence >= 0.5) return '#fd9207ff' // Orange - Medium Severity
+      return '#fded05ff' // Yellow - Low Severity
+    }
+    
+    // Fallback based on label if confidence is not available
     const labelLower = label.toLowerCase()
     
-    // Critical anomalies - Red
+    // High Severity terms - Red
     if (labelLower.includes('crack') || 
         labelLower.includes('damage') || 
         labelLower.includes('severe') ||
@@ -132,7 +187,7 @@ export function CanvasAnnotationEditor({
       return '#ef4444' // Red
     }
     
-    // Major anomalies - Orange
+    // Medium Severity terms - Orange
     if (labelLower.includes('corrosion') || 
         labelLower.includes('rust') || 
         labelLower.includes('moderate') ||
@@ -141,19 +196,12 @@ export function CanvasAnnotationEditor({
       return '#f59e0b' // Orange
     }
     
-    // Minor anomalies - Yellow
+    // Low Severity terms - Yellow
     if (labelLower.includes('minor') || 
         labelLower.includes('dirt') || 
         labelLower.includes('dust') ||
         labelLower.includes('discolor')) {
       return '#eab308' // Yellow
-    }
-    
-    // Use confidence as fallback
-    if (confidence !== undefined) {
-      if (confidence >= 0.8) return '#ef4444' // Red - High confidence
-      if (confidence >= 0.5) return '#f59e0b' // Orange - Medium confidence
-      return '#eab308' // Yellow - Low confidence
     }
     
     // Default - Blue for user-added or unknown
@@ -185,8 +233,9 @@ export function CanvasAnnotationEditor({
     ctx.restore()
 
     // Draw bounding boxes (not scaled - fixed size)
-    boxes.forEach(box => {
+    boxes.forEach((box, index) => {
       const isSelected = box.id === selectedId
+      const boxNumber = index + 1 // 1-based numbering
 
       // Calculate scaled box coordinates (where the box appears on scaled image)
       const scaledX = box.x * scale + offset.x
@@ -202,52 +251,24 @@ export function CanvasAnnotationEditor({
       ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight)
       ctx.shadowBlur = 0
 
-      // Prepare label text (fixed size)
-      const labelText = `${box.label} ${box.confidence ? `(${Math.round(box.confidence * 100)}%)` : ''}`
+      // Draw box number badge in top-left corner
+      const badgeSize = 20
+      const badgePadding = 2
       
-      // Calculate font size (fixed size, not scaled)
-      const fontSize = 10
-      const labelPadding = 3
-      ctx.font = `bold ${fontSize}px Arial`
-      const textMetrics = ctx.measureText(labelText)
-      const textWidth = textMetrics.width
-      const textHeight = fontSize
-      
-      // Draw label background (above or below the box, using scaled coordinates)
+      // Draw badge background circle
       ctx.fillStyle = box.color
-      const labelY = scaledY > textHeight + labelPadding * 2 
-        ? scaledY - textHeight - labelPadding * 2 
-        : scaledY + scaledHeight
-      ctx.fillRect(scaledX, labelY, textWidth + labelPadding * 2, textHeight + labelPadding)
-
-      // Draw label text (fixed size)
+      ctx.beginPath()
+      ctx.arc(scaledX - badgeSize/2, scaledY - badgeSize/2, badgeSize/2, 0, Math.PI * 2)
+      ctx.fill()
+      
+      // Draw box number
       ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 12px Arial'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(boxNumber.toString(), scaledX - badgeSize/2, scaledY - badgeSize/2)
+      ctx.textAlign = 'start'
       ctx.textBaseline = 'top'
-      ctx.fillText(labelText, scaledX + labelPadding, labelY + labelPadding)
-
-      // Draw dimensions text inside box if space available (fixed font size)
-      if (scaledWidth > 50 && scaledHeight > 30) {
-        const dimensionText = `${Math.round(box.width)} × ${Math.round(box.height)}`
-        ctx.font = `10px Arial`
-        ctx.fillStyle = box.color
-        ctx.textBaseline = 'middle'
-        ctx.textAlign = 'center'
-        
-        // Draw white background for dimension text (fixed size)
-        const dimTextWidth = ctx.measureText(dimensionText).width
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-        ctx.fillRect(
-          scaledX + scaledWidth / 2 - dimTextWidth / 2 - 3,
-          scaledY + scaledHeight / 2 - 6,
-          dimTextWidth + 6,
-          12
-        )
-        
-        // Draw dimension text (fixed size, using scaled coordinates)
-        ctx.fillStyle = box.color
-        ctx.fillText(dimensionText, scaledX + scaledWidth / 2, scaledY + scaledHeight / 2)
-        ctx.textAlign = 'start'
-      }
 
       // Draw resize handles if selected (fixed size)
       if (isSelected) {
@@ -299,29 +320,6 @@ export function CanvasAnnotationEditor({
         ctx.setLineDash([8, 4])
         ctx.strokeRect(scaledPreviewX, scaledPreviewY, scaledPreviewWidth, scaledPreviewHeight)
         ctx.setLineDash([])
-        
-        // Draw preview dimensions (fixed font size)
-        if (scaledPreviewWidth > 30 && scaledPreviewHeight > 30) {
-          const dimText = `${Math.round(previewWidth)} × ${Math.round(previewHeight)}`
-          ctx.font = '10px Arial'  // Fixed font size
-          ctx.fillStyle = '#3b82f6'
-          ctx.textBaseline = 'middle'
-          ctx.textAlign = 'center'
-          
-          // Background for text
-          const dimTextWidth = ctx.measureText(dimText).width
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-          ctx.fillRect(
-            scaledPreviewX + scaledPreviewWidth / 2 - dimTextWidth / 2 - 3,
-            scaledPreviewY + scaledPreviewHeight / 2 - 6,
-            dimTextWidth + 6,
-            12
-          )
-          
-          ctx.fillStyle = '#3b82f6'
-          ctx.fillText(dimText, scaledPreviewX + scaledPreviewWidth / 2, scaledPreviewY + scaledPreviewHeight / 2)
-          ctx.textAlign = 'start'
-        }
       }
     }
   }, [image, boxes, selectedId, scale, offset, imageSize, isDrawing, dragStart])
@@ -361,13 +359,39 @@ export function CanvasAnnotationEditor({
     return x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height
   }
 
+  // Check if clicking on the numbered badge (in image coordinates)
+  const isClickingOnBadge = (box: BoundingBox, x: number, y: number): boolean => {
+    const badgeSize = 20
+    const badgeRadius = badgeSize / 2
+    const badgeCenterX = box.x - badgeRadius
+    const badgeCenterY = box.y - badgeRadius
+
+    // Increase clickable area by 100% for easier clicking
+    const clickableRadius = badgeRadius * 2.0
+
+    // Calculate distance from click to badge center
+    const dx = x - badgeCenterX
+    const dy = y - badgeCenterY
+    const distance = Math.sqrt(dx * dx + dy * dy)
+    
+    return distance <= clickableRadius
+  }
+
   // Mouse down handler
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return // Only left click
 
     const pos = getMousePos(e)
 
-    // If Shift is pressed, start drawing new box
+    // If in new box drawing mode (after clicking "Create New Bounding Box" button)
+    if (isDrawingNewBox) {
+      setIsDrawing(true)
+      setDragStart(pos)
+      setSelectedId(null)
+      return
+    }
+
+    // If Shift is pressed, start drawing new box (legacy mode - keep for compatibility)
     if (e.shiftKey) {
       setIsDrawing(true)
       setDragStart(pos)
@@ -397,6 +421,16 @@ export function CanvasAnnotationEditor({
       }
     }
 
+    // Check if clicking on any box's numbered badge (higher priority than box body)
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      if (isClickingOnBadge(boxes[i], pos.x, pos.y)) {
+        console.log('🎯 Clicked on badge for box:', boxes[i].id, i)
+        setSelectedId(boxes[i].id)
+        // Don't start dragging when clicking badge, just select
+        return
+      }
+    }
+
     // Check if clicking on any box
     let clickedBox = false
     for (let i = boxes.length - 1; i >= 0; i--) {
@@ -419,6 +453,23 @@ export function CanvasAnnotationEditor({
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     // Track last mouse position for drawing preview
     lastMousePos.current = { x: e.clientX, y: e.clientY }
+    
+    const canvas = canvasRef.current
+    if (!canvas) return
+    
+    // Check if hovering over a badge and update cursor
+    const pos = getMousePos(e)
+    let hoveringBadge = false
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      if (isClickingOnBadge(boxes[i], pos.x, pos.y)) {
+        hoveringBadge = true
+        canvas.style.cursor = 'pointer'
+        break
+      }
+    }
+    if (!hoveringBadge && !isResizing && !isDragging && !isDrawing && !isPanning) {
+      canvas.style.cursor = 'crosshair'
+    }
     
     if (isResizing && selectedId) {
       const pos = getMousePos(e)
@@ -501,14 +552,23 @@ export function CanvasAnnotationEditor({
       const height = pos.y - dragStart.y
 
       if (Math.abs(width) > 10 && Math.abs(height) > 10) {
+        // Use the label and severity from dialog if in new box mode, otherwise use current label
+        const label = isDrawingNewBox ? newBoxLabel : currentLabel
+        const severity = isDrawingNewBox ? newBoxSeverity : undefined
+        const confidence = isDrawingNewBox ? (newBoxConfidence / 100) : 1.0 // Always provide confidence, default to 1.0
+        
         const newBox: BoundingBox = {
           id: `user-${Date.now()}`,
           x: Math.min(dragStart.x, pos.x),
           y: Math.min(dragStart.y, pos.y),
           width: Math.abs(width),
           height: Math.abs(height),
-          label: currentLabel,
-          color: getColorBySeverity(currentLabel),
+          label: label,
+          confidence: confidence,
+          severity: severity, // Store severity in the box
+          color: severity 
+            ? (severity === 'Critical' ? '#ef4444' : '#f59e0b')
+            : getColorBySeverity(label),
           action: 'added',
           isAI: false
         }
@@ -516,6 +576,14 @@ export function CanvasAnnotationEditor({
         const newBoxes = [...boxes, newBox]
         setBoxes(newBoxes)
         addToHistory(newBoxes)
+        
+        // Reset new box mode
+        if (isDrawingNewBox) {
+          setIsDrawingNewBox(false)
+          setNewBoxLabel("")
+          setNewBoxSeverity("Warning")
+          setNewBoxConfidence(100)
+        }
       }
       setIsDrawing(false)
     } else if (isDragging || isResizing) {
@@ -559,6 +627,52 @@ export function CanvasAnnotationEditor({
     addToHistory(newBoxes)
   }
 
+  // Function to update the selected box's label
+  const handleEditSelectedLabel = (newLabel: string) => {
+    if (!selectedId) return
+
+    const newBoxes = boxes.map(box => {
+      if (box.id === selectedId) {
+        return {
+          ...box,
+          label: newLabel,
+          color: getColorBySeverity(newLabel, box.confidence),
+          action: box.isAI ? 'edited' as const : box.action
+        }
+      }
+      return box
+    })
+
+    setBoxes(newBoxes)
+    addToHistory(newBoxes)
+  }
+
+  // Handle create new bounding box button click
+  const handleCreateNewBox = () => {
+    setShowNewBoxDialog(true)
+  }
+
+  // Handle dialog confirm - start drawing mode
+  const handleDialogConfirm = () => {
+    if (!newBoxLabel.trim()) {
+      alert("Please enter a description for the anomaly")
+      return
+    }
+    
+    setShowNewBoxDialog(false)
+    setIsDrawingNewBox(true)
+    // Change cursor to indicate drawing mode
+  }
+
+  // Handle dialog cancel
+  const handleDialogCancel = () => {
+    setShowNewBoxDialog(false)
+    setNewBoxLabel("")
+    setNewBoxSeverity("Warning")
+    setNewBoxConfidence(100)
+    setIsDrawingNewBox(false)
+  }
+
   // Store the initial scale for reset
   const [initialScale, setInitialScale] = useState(1)
 
@@ -599,9 +713,20 @@ export function CanvasAnnotationEditor({
         width: Math.round(box.width),
         height: Math.round(box.height),
         label: box.label,
-        confidence: box.confidence,
+        confidence: box.confidence !== undefined ? box.confidence : 1.0, // Ensure confidence is always a number
         action: box.action
       }))
+
+      console.log('📤 Preparing to save annotations:', {
+        imageId,
+        userId,
+        annotationsCount: annotations.length,
+        annotations: annotations.map(a => ({
+          label: a.label,
+          confidence: a.confidence,
+          action: a.action
+        }))
+      })
 
       const result = await saveAnnotations({
         imageId,
@@ -616,9 +741,11 @@ export function CanvasAnnotationEditor({
         }
       } else {
         console.error('❌ Failed to save annotations')
+        alert('Failed to save annotations. Please check the console for details.')
       }
     } catch (error) {
-      console.error('Error saving annotations:', error)
+      console.error('💥 Error saving annotations:', error)
+      alert(`Error saving annotations: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSaving(false)
     }
@@ -629,22 +756,8 @@ export function CanvasAnnotationEditor({
       {/* Compact Toolbar */}
       {compact && (
         <div className="bg-muted p-2 rounded-lg space-y-2">
+          {/* First Row - Zoom Controls */}
           <div className="flex items-center gap-2 text-xs flex-wrap">
-            <Input
-              value={currentLabel}
-              onChange={(e) => setCurrentLabel(e.target.value)}
-              className="h-7 text-xs flex-1 min-w-[100px]"
-              placeholder="Label"
-            />
-            <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleUndo} disabled={historyStep === 0}>
-              <Undo className="h-3 w-3" />
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleRedo} disabled={historyStep === history.length - 1}>
-              <Redo className="h-3 w-3" />
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleDeleteBox} disabled={!selectedId}>
-              <Trash2 className="h-3 w-3" />
-            </Button>
             <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleZoomOut}>
               <ZoomOut className="h-3 w-3" />
             </Button>
@@ -655,19 +768,53 @@ export function CanvasAnnotationEditor({
             <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleResetView}>
               <RotateCcw className="h-3 w-3" />
             </Button>
+          </div>
+          
+          {/* Second Row - Action Controls */}
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            <Button 
+              variant={isDrawingNewBox ? "default" : "outline"} 
+              size="sm" 
+              className="h-7 px-2" 
+              onClick={handleCreateNewBox}
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              New Box
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleUndo} disabled={historyStep === 0}>
+              <Undo className="h-3 w-3" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleRedo} disabled={historyStep === history.length - 1}>
+              <Redo className="h-3 w-3" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleDeleteBox} disabled={!selectedId}>
+              <Trash2 className="h-3 w-3" />
+            </Button>
             <Button size="sm" className="h-7" onClick={handleSave} disabled={saving || boxes.length === 0}>
               <Save className="h-3 w-3 mr-1" />
               {saving ? 'Saving...' : 'Save'}
             </Button>
           </div>
+          
           <div className="flex gap-2 text-xs flex-wrap">
             <Badge variant="outline" className="text-xs">Total: {boxes.length}</Badge>
             <Badge variant="secondary" className="text-xs">AI: {boxes.filter(b => b.isAI).length}</Badge>
             <Badge variant="default" className="text-xs">User: {boxes.filter(b => !b.isAI).length}</Badge>
-            {selectedId && <Badge variant="destructive" className="text-xs">Selected</Badge>}
+            {selectedId && (
+              <Badge variant="destructive" className="text-xs">
+                {boxes.find(b => b.id === selectedId)?.isAI ? "Editing AI Detection" : "Editing Warning"}
+              </Badge>
+            )}
           </div>
           <div className="text-xs text-muted-foreground space-y-1">
-            <div><strong>Shift+Drag:</strong> Draw new box • <strong>Ctrl+Drag:</strong> Pan canvas </div>
+            {isDrawingNewBox ? (
+              <div className="text-blue-600 dark:text-blue-400 font-semibold">
+                ✏️ Click and drag on the image to draw the bounding box for: "{newBoxLabel}"
+              </div>
+            ) : (
+              <div><strong>Shift+Drag:</strong> Draw new box • <strong>Ctrl+Drag:</strong> Pan canvas</div>
+            )}
+            {selectedId && <div><strong>Selected Box:</strong> Edit warning message in the input field above</div>}
           </div>
         </div>
       )}
@@ -682,34 +829,7 @@ export function CanvasAnnotationEditor({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="label-input">Label:</Label>
-                <Input
-                  id="label-input"
-                  value={currentLabel}
-                  onChange={(e) => setCurrentLabel(e.target.value)}
-                  className="w-40"
-                  placeholder="Enter label"
-                />
-              </div>
-              
-              <div className="flex gap-2 ml-auto">
-                <Button variant="outline" size="sm" onClick={handleUndo} disabled={historyStep === 0}>
-                  <Undo className="h-4 w-4 mr-1" />
-                  Undo
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleRedo} disabled={historyStep === history.length - 1}>
-                  <Redo className="h-4 w-4 mr-1" />
-                  Redo
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleDeleteBox} disabled={!selectedId}>
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Delete
-                </Button>
-              </div>
-            </div>
-
+            {/* First Row - Zoom Controls */}
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={handleZoomOut}>
                 <ZoomOut className="h-4 w-4" />
@@ -724,11 +844,37 @@ export function CanvasAnnotationEditor({
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Reset
               </Button>
-              
-              <Button className="ml-auto" onClick={handleSave} disabled={saving || boxes.length === 0}>
-                <Save className="h-4 w-4 mr-2" />
-                {saving ? 'Saving...' : 'Save Annotations'}
+            </div>
+            
+            {/* Second Row - Action Controls */}
+            <div className="flex flex-wrap gap-2">
+              <Button 
+                variant={isDrawingNewBox ? "default" : "outline"} 
+                size="sm" 
+                onClick={handleCreateNewBox}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Create New Bounding Box
               </Button>
+              
+              <div className="flex gap-2 ml-auto">
+                <Button variant="outline" size="sm" onClick={handleUndo} disabled={historyStep === 0}>
+                  <Undo className="h-4 w-4 mr-1" />
+                  Undo
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleRedo} disabled={historyStep === history.length - 1}>
+                  <Redo className="h-4 w-4 mr-1" />
+                  Redo
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDeleteBox} disabled={!selectedId}>
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+                <Button onClick={handleSave} disabled={saving || boxes.length === 0}>
+                  <Save className="h-4 w-4 mr-2" />
+                  {saving ? 'Saving...' : 'Save Annotations'}
+                </Button>
+              </div>
             </div>
 
             <div className="flex gap-4 text-sm">
@@ -767,16 +913,98 @@ export function CanvasAnnotationEditor({
             <div className="mt-4 text-sm text-muted-foreground">
               <p>💡 <strong>Tips:</strong></p>
               <ul className="list-disc list-inside space-y-1">
-                <li><strong>Shift + Drag</strong> to draw new bounding boxes</li>
+                <li><strong>Create New Bounding Box button</strong> to add a new anomaly with custom details</li>
+                <li><strong>Shift + Drag</strong> to draw new bounding boxes (legacy mode)</li>
+                <li><strong>Click a box</strong> to select it and edit its warning message</li>
                 <li><strong>Ctrl + Drag</strong> (or Cmd + Drag on Mac) to pan the canvas</li>
                 <li><strong>Zoom buttons</strong> (+/-) to zoom in/out, <strong>Reset button</strong> to fit to screen</li>
                 <li><strong>Delete button</strong> to remove selected box</li>
-                <li><strong>Color coding:</strong> Red = Critical, Orange = Major, Yellow = Minor, Blue = User-added</li>
+                <li><strong>Color coding:</strong> Red = Critical, Orange = Warning, Yellow = Minor</li>
               </ul>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* New Bounding Box Dialog */}
+      <Dialog open={showNewBoxDialog} onOpenChange={setShowNewBoxDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Bounding Box</DialogTitle>
+            <DialogDescription>
+              Enter the anomaly details. After clicking Start Drawing, click and drag on the image to draw the bounding box.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="anomaly-label">Anomaly Description</Label>
+              <Input
+                id="anomaly-label"
+                placeholder="e.g., Point Overload, Oil Leak, etc."
+                value={newBoxLabel}
+                onChange={(e) => setNewBoxLabel(e.target.value)}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="severity-select">Priority Level</Label>
+              <Select value={newBoxSeverity} onValueChange={(value: "Critical" | "Warning") => setNewBoxSeverity(value)}>
+                <SelectTrigger id="severity-select">
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Critical">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <span>Critical - Immediate Action</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Warning">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+                      <span>Warning - Monitor Closely</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="confidence-input">Confidence Level (%)</Label>
+              <div className="flex items-center gap-4">
+                <Input
+                  id="confidence-input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={newBoxConfidence}
+                  onChange={(e) => setNewBoxConfidence(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                  className="w-24"
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={newBoxConfidence}
+                  onChange={(e) => setNewBoxConfidence(parseInt(e.target.value))}
+                  className="flex-1"
+                />
+                <span className="text-sm text-muted-foreground min-w-[3rem] text-right">{newBoxConfidence}%</span>
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={handleDialogCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleDialogConfirm}>
+              Start Drawing
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
