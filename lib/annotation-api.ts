@@ -10,12 +10,19 @@ export interface AnnotationDTO {
   height: number
   label: string
   confidence?: number
+  severity?: 'Critical' | 'Warning' | 'Uncertain'
   action: 'added' | 'edited' | 'deleted' | 'confirmed'
   annotationType?: 'AI_GENERATED' | 'USER_CREATED' | 'USER_EDITED'
   notes?: string
   userId?: string
   timestamp?: string
+  lastModified?: string
+  modificationTypes?: string[]
+  modificationDetails?: string
+  isAI?: boolean
   originalDetectionId?: string
+  imageId?: string
+  transformerId?: string
 }
 
 export interface SaveAnnotationsRequest {
@@ -65,31 +72,13 @@ export async function saveAnnotations(request: SaveAnnotationsRequest): Promise<
 }
 
 /**
- * Get annotations for a specific image
+ * Get annotations for a specific inspection (uses new table)
  * 
- * @param imageId - The image ID
+ * @param imageId - The inspection ID
  * @returns Promise with the annotations list
  */
 export async function getAnnotationsByImage(imageId: string): Promise<AnnotationDTO[] | null> {
-  try {
-    const response = await fetch(`${BACKEND_BASE_URL}/annotations/image/${imageId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (!response.ok) {
-      console.error('Failed to fetch annotations:', response.status)
-      return null
-    }
-
-    const data = await response.json()
-    return data
-  } catch (error) {
-    console.error('Error fetching annotations:', error)
-    return null
-  }
+  return getInspectionAnnotations(imageId)
 }
 
 /**
@@ -144,6 +133,141 @@ export async function deleteAnnotation(annotationId: string): Promise<boolean> {
   } catch (error) {
     console.error('Error deleting annotation:', error)
     return false
+  }
+}
+
+/**
+ * Save annotation updates in real-time with full metadata
+ * Uses the new inspection_annotations table
+ * 
+ * @param imageId - The inspection ID
+ * @param userId - The user ID making the changes
+ * @param transformerId - The transformer ID (optional)
+ * @param activeAnnotations - Currently active bounding boxes
+ * @param deletedAnnotations - Deleted bounding boxes
+ * @returns Promise with the save result
+ */
+export async function saveAnnotationsRealtime(
+  imageId: string,
+  userId: string,
+  transformerId: string | undefined,
+  activeAnnotations: any[],
+  deletedAnnotations: any[]
+): Promise<SaveAnnotationsResponse | null> {
+  try {
+    // Convert bounding boxes to AnnotationDTO format
+    const annotations: AnnotationDTO[] = [
+      ...activeAnnotations.map(box => ({
+        id: box.id && !box.id.startsWith('user-') && !box.id.startsWith('ai-') ? box.id : undefined,
+        x: Math.round(box.x),
+        y: Math.round(box.y),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        label: box.label,
+        confidence: box.confidence !== undefined ? box.confidence : 1.0,
+        severity: box.severity,
+        action: box.action as 'added' | 'edited' | 'deleted' | 'confirmed',
+        annotationType: box.isAI ? 'AI_GENERATED' as const : 'USER_CREATED' as const,
+        notes: box.notes,
+        userId: box.userId || userId,
+        timestamp: box.timestamp || new Date().toISOString(),
+        lastModified: box.lastModified || new Date().toISOString(),
+        modificationTypes: box.modificationTypes || ['created'],
+        modificationDetails: box.modificationDetails,
+        isAI: box.isAI,
+        imageId: imageId,
+        transformerId: transformerId
+      })),
+      ...deletedAnnotations.map(box => ({
+        id: box.id && !box.id.startsWith('user-') && !box.id.startsWith('ai-') ? box.id : undefined,
+        x: Math.round(box.x),
+        y: Math.round(box.y),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        label: box.label,
+        confidence: box.confidence !== undefined ? box.confidence : 1.0,
+        severity: box.severity,
+        action: 'deleted' as const,
+        annotationType: box.isAI ? 'AI_GENERATED' as const : 'USER_CREATED' as const,
+        notes: box.notes,
+        userId: box.userId || userId,
+        timestamp: box.timestamp || new Date().toISOString(),
+        lastModified: box.lastModified || new Date().toISOString(),
+        modificationTypes: box.modificationTypes || ['deleted'],
+        modificationDetails: box.modificationDetails,
+        isAI: box.isAI,
+        imageId: imageId,
+        transformerId: transformerId
+      }))
+    ]
+
+    const request: SaveAnnotationsRequest = {
+      imageId,
+      userId,
+      timestamp: new Date().toISOString(),
+      annotations
+    }
+
+    console.log('📤 [Annotation API] Real-time save to inspection_annotations:', {
+      inspectionId: imageId,
+      userId,
+      transformerId,
+      activeCount: activeAnnotations.length,
+      deletedCount: deletedAnnotations.length,
+      totalAnnotations: annotations.length
+    })
+
+    // Use new endpoint
+    const response = await fetch(`${BACKEND_BASE_URL}/inspection-annotations/save`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      console.error('Failed to save annotations:', response.status)
+      return null
+    }
+
+    const data = await response.json()
+    console.log('✅ [Annotation API] Save successful:', data.message, '- Count:', data.count)
+    return data
+  } catch (error) {
+    console.error('Error saving annotations in real-time:', error)
+    return null
+  }
+}
+
+/**
+ * Get annotations for an inspection from the new table
+ * 
+ * @param inspectionId - The inspection ID
+ * @returns Promise with the annotations list
+ */
+export async function getInspectionAnnotations(inspectionId: string): Promise<AnnotationDTO[] | null> {
+  try {
+    console.log('📥 [Annotation API] Fetching from inspection_annotations:', inspectionId)
+    
+    const response = await fetch(`${BACKEND_BASE_URL}/inspection-annotations/${inspectionId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      console.error('Failed to fetch annotations:', response.status)
+      return null
+    }
+
+    const data = await response.json()
+    console.log('✅ [Annotation API] Fetched', data.length, 'annotations')
+    return data
+  } catch (error) {
+    console.error('Error fetching annotations:', error)
+    return null
   }
 }
 

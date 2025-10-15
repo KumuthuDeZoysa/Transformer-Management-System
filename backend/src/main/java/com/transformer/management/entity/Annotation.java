@@ -84,6 +84,31 @@ public class Annotation {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    // New metadata fields for comprehensive tracking
+    @Column(name = "severity")
+    private String severity; // "Critical", "Warning", "Uncertain"
+
+    @Column(name = "last_modified")
+    private LocalDateTime lastModified;
+
+    @Column(name = "modification_types", columnDefinition = "TEXT")
+    private String modificationTypes; // JSON array stored as text: ["created", "resized", "relocated"]
+
+    @Column(name = "modification_details", columnDefinition = "TEXT")
+    private String modificationDetails; // Human-readable summary: "Resized, Relocated"
+
+    @Column(name = "is_ai")
+    private Boolean isAI = false; // True if AI-generated, False if user-created
+
+    @Column(name = "image_id_ref")
+    private String imageIdRef; // Store the inspection/image ID reference
+
+    @Column(name = "transformer_id")
+    private String transformerId; // Store the transformer ID reference
+
+    @Column(name = "timestamp_iso")
+    private String timestampIso; // ISO timestamp string for frontend compatibility
+
     // Constructors
     public Annotation() {}
 
@@ -154,6 +179,30 @@ public class Annotation {
 
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+
+    public String getSeverity() { return severity; }
+    public void setSeverity(String severity) { this.severity = severity; }
+
+    public LocalDateTime getLastModified() { return lastModified; }
+    public void setLastModified(LocalDateTime lastModified) { this.lastModified = lastModified; }
+
+    public String getModificationTypes() { return modificationTypes; }
+    public void setModificationTypes(String modificationTypes) { this.modificationTypes = modificationTypes; }
+
+    public String getModificationDetails() { return modificationDetails; }
+    public void setModificationDetails(String modificationDetails) { this.modificationDetails = modificationDetails; }
+
+    public Boolean getIsAI() { return isAI; }
+    public void setIsAI(Boolean isAI) { this.isAI = isAI; }
+
+    public String getImageIdRef() { return imageIdRef; }
+    public void setImageIdRef(String imageIdRef) { this.imageIdRef = imageIdRef; }
+
+    public String getTransformerId() { return transformerId; }
+    public void setTransformerId(String transformerId) { this.transformerId = transformerId; }
+
+    public String getTimestampIso() { return timestampIso; }
+    public void setTimestampIso(String timestampIso) { this.timestampIso = timestampIso; }
 
     @PreUpdate
     protected void onUpdate() {

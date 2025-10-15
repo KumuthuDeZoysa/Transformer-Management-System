@@ -1,6 +1,7 @@
 package com.transformer.management.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -20,6 +21,15 @@ public class AnnotationDTO {
     private String userId;
     private LocalDateTime timestamp;
     private UUID originalDetectionId;
+    
+    // New metadata fields
+    private String severity; // "Critical", "Warning", "Uncertain"
+    private String lastModified; // ISO timestamp string
+    private List<String> modificationTypes; // ["created", "resized", "relocated", "label-changed", "deleted"]
+    private String modificationDetails; // "Resized, Relocated"
+    private Boolean isAI; // True if AI-generated, False if user-created
+    private String imageId; // Inspection/image ID reference
+    private String transformerId; // Transformer ID reference
 
     // Constructors
     public AnnotationDTO() {}
@@ -74,4 +84,25 @@ public class AnnotationDTO {
 
     public UUID getOriginalDetectionId() { return originalDetectionId; }
     public void setOriginalDetectionId(UUID originalDetectionId) { this.originalDetectionId = originalDetectionId; }
+
+    public String getSeverity() { return severity; }
+    public void setSeverity(String severity) { this.severity = severity; }
+
+    public String getLastModified() { return lastModified; }
+    public void setLastModified(String lastModified) { this.lastModified = lastModified; }
+
+    public List<String> getModificationTypes() { return modificationTypes; }
+    public void setModificationTypes(List<String> modificationTypes) { this.modificationTypes = modificationTypes; }
+
+    public String getModificationDetails() { return modificationDetails; }
+    public void setModificationDetails(String modificationDetails) { this.modificationDetails = modificationDetails; }
+
+    public Boolean getIsAI() { return isAI; }
+    public void setIsAI(Boolean isAI) { this.isAI = isAI; }
+
+    public String getImageId() { return imageId; }
+    public void setImageId(String imageId) { this.imageId = imageId; }
+
+    public String getTransformerId() { return transformerId; }
+    public void setTransformerId(String transformerId) { this.transformerId = transformerId; }
 }

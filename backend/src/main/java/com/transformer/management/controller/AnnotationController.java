@@ -57,11 +57,17 @@ public class AnnotationController {
         }
 
         try {
-            UUID imageId = UUID.fromString(request.getImageId());
+            String imageIdRef = request.getImageId(); // Store as inspection ID string
             
-            // Verify image exists
-            Image image = imageRepository.findById(imageId)
-                .orElseThrow(() -> new RuntimeException("Image not found: " + imageId));
+            // Optional: Try to find Image entity if imageId is a valid UUID
+            Image image = null;
+            try {
+                UUID imageUuid = UUID.fromString(imageIdRef);
+                image = imageRepository.findById(imageUuid).orElse(null);
+            } catch (IllegalArgumentException e) {
+                // Not a UUID, that's fine - we'll store the inspection ID directly
+                logger.info("Image ID is not a UUID, storing as inspection ID reference: {}", imageIdRef);
+            }
 
             List<Annotation> savedAnnotations = new ArrayList<>();
 
@@ -77,6 +83,7 @@ public class AnnotationController {
                         // Mark as deleted instead of actually deleting
                         annotation.setIsDeleted(true);
                         annotation.setDeletedAt(LocalDateTime.now());
+                        annotation.setImageIdRef(imageIdRef); // Always set imageIdRef
                         logger.info("Marking annotation {} as deleted", dto.getId());
                     } else {
                         // Update coordinates and metadata
@@ -89,12 +96,26 @@ public class AnnotationController {
                         annotation.setAction(dto.getAction());
                         annotation.setNotes(dto.getNotes());
                         annotation.setAnnotationType("USER_EDITED");
+                        
+                        // Update new metadata fields
+                        annotation.setSeverity(dto.getSeverity());
+                        annotation.setLastModified(dto.getLastModified() != null ? LocalDateTime.parse(dto.getLastModified()) : LocalDateTime.now());
+                        annotation.setModificationTypes(dto.getModificationTypes() != null ? String.join(",", dto.getModificationTypes()) : null);
+                        annotation.setModificationDetails(dto.getModificationDetails());
+                        annotation.setIsAI(dto.getIsAI() != null ? dto.getIsAI() : annotation.getIsAI());
+                        annotation.setImageIdRef(dto.getImageId());
+                        annotation.setTransformerId(dto.getTransformerId());
+                        annotation.setTimestampIso(dto.getLastModified());
+                        
                         logger.info("Updating annotation {} with action: {}", dto.getId(), dto.getAction());
                     }
                 } else {
                     // Create new annotation
                     annotation = new Annotation();
-                    annotation.setImage(image);
+                    if (image != null) {
+                        annotation.setImage(image); // Set if we found the Image entity
+                    }
+                    annotation.setImageIdRef(imageIdRef); // Always set the inspection ID reference
                     annotation.setUserId(request.getUserId() != null ? request.getUserId() : "unknown");
                     annotation.setBboxX(dto.getX());
                     annotation.setBboxY(dto.getY());
@@ -105,13 +126,23 @@ public class AnnotationController {
                     annotation.setAction(dto.getAction() != null ? dto.getAction() : "added");
                     annotation.setNotes(dto.getNotes());
                     annotation.setAnnotationType("USER_CREATED");
+                    
+                    // Set new metadata fields
+                    annotation.setSeverity(dto.getSeverity());
+                    annotation.setLastModified(dto.getLastModified() != null ? LocalDateTime.parse(dto.getLastModified()) : LocalDateTime.now());
+                    annotation.setModificationTypes(dto.getModificationTypes() != null ? String.join(",", dto.getModificationTypes()) : "created");
+                    annotation.setModificationDetails(dto.getModificationDetails());
+                    annotation.setIsAI(dto.getIsAI() != null ? dto.getIsAI() : false);
+                    annotation.setTransformerId(dto.getTransformerId());
+                    annotation.setTimestampIso(dto.getLastModified());
+                    
                     logger.info("Creating new annotation with action: {}", annotation.getAction());
                 }
 
                 savedAnnotations.add(annotationRepository.save(annotation));
             }
 
-            logger.info("Successfully saved {} annotations for image {}", savedAnnotations.size(), imageId);
+            logger.info("Successfully saved {} annotations for inspection/image {}", savedAnnotations.size(), imageIdRef);
 
             // Convert to DTOs for response
             List<AnnotationDTO> responseDTOs = savedAnnotations.stream()
@@ -124,10 +155,6 @@ public class AnnotationController {
                 "annotations", responseDTOs
             ));
 
-        } catch (IllegalArgumentException e) {
-            logger.error("Invalid image ID format: {}", request.getImageId());
-            return ResponseEntity.badRequest()
-                .body(Map.of("error", "Invalid image ID format"));
         } catch (Exception e) {
             logger.error("Error saving annotations: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError()
@@ -139,16 +166,18 @@ public class AnnotationController {
      * Get annotations for a specific image
      * GET /api/annotations/image/{imageId}
      * 
-     * @param imageId The image ID
-     * @return List of annotations for the image
+     * @param imageId The image ID (inspection ID)
+     * @return List of annotations for the image (including deleted ones)
      */
     @GetMapping("/image/{imageId}")
     public ResponseEntity<?> getAnnotationsByImage(@PathVariable String imageId) {
         logger.info("Fetching annotations for image: {}", imageId);
 
         try {
-            UUID id = UUID.fromString(imageId);
-            List<Annotation> annotations = annotationRepository.findActiveAnnotationsByImageId(id);
+            // Use imageIdRef instead of UUID lookup for inspection-based queries
+            List<Annotation> annotations = annotationRepository.findAllAnnotationsByImageIdRef(imageId);
+            
+            logger.info("Found {} annotations for image {}", annotations.size(), imageId);
 
             List<AnnotationDTO> dtos = annotations.stream()
                 .map(this::convertToDTO)
@@ -156,9 +185,6 @@ public class AnnotationController {
 
             return ResponseEntity.ok(dtos);
 
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest()
-                .body(Map.of("error", "Invalid image ID format"));
         } catch (Exception e) {
             logger.error("Error fetching annotations: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError()
@@ -248,6 +274,21 @@ public class AnnotationController {
         dto.setUserId(annotation.getUserId());
         dto.setTimestamp(annotation.getCreatedAt());
         dto.setOriginalDetectionId(annotation.getOriginalDetectionId());
+        
+        // Add new metadata fields
+        dto.setSeverity(annotation.getSeverity());
+        dto.setLastModified(annotation.getLastModified() != null ? annotation.getLastModified().toString() : null);
+        
+        // Convert comma-separated string to List
+        if (annotation.getModificationTypes() != null && !annotation.getModificationTypes().isEmpty()) {
+            dto.setModificationTypes(java.util.Arrays.asList(annotation.getModificationTypes().split(",")));
+        }
+        
+        dto.setModificationDetails(annotation.getModificationDetails());
+        dto.setIsAI(annotation.getIsAI());
+        dto.setImageId(annotation.getImageIdRef());
+        dto.setTransformerId(annotation.getTransformerId());
+        
         return dto;
     }
 }

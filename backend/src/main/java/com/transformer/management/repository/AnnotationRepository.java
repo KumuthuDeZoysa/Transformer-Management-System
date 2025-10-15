@@ -36,6 +36,13 @@ public interface AnnotationRepository extends JpaRepository<Annotation, UUID> {
     List<Annotation> findActiveAnnotationsByImageId(UUID imageId);
     
     /**
+     * Find ALL annotations for an image (including deleted ones)
+     * Used by Load Previous Detections feature
+     */
+    @Query("SELECT a FROM Annotation a WHERE a.imageIdRef = :imageId ORDER BY a.createdAt DESC")
+    List<Annotation> findAllAnnotationsByImageIdRef(String imageId);
+    
+    /**
      * Find all annotations for a specific anomaly detection (including deleted)
      */
     @Query("SELECT a FROM Annotation a WHERE a.anomalyDetection.id = :detectionId ORDER BY a.createdAt DESC")

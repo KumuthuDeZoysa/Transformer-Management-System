@@ -1,17 +1,19 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { detectAnomalies, type AnomalyDetectionResponse } from "@/lib/anomaly-api"
+import { saveAnnotationsRealtime, getInspectionAnnotations } from "@/lib/annotation-api"
 import { CanvasAnnotationEditor } from "@/components/canvas-annotation-editor"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, AlertCircle, CheckCircle2, XCircle, Sparkles, ZoomIn, ZoomOut, Move, RotateCcw } from "lucide-react"
+import { Loader2, AlertCircle, CheckCircle2, XCircle, Sparkles, ZoomIn, ZoomOut, Move, RotateCcw, Database, Save } from "lucide-react"
 
 interface AnomalyViewerProps {
   baselineUrl: string
   maintenanceUrl: string
   inspectionId?: string
+  transformerId?: string
   onAnalysisComplete?: () => void
 }
 
@@ -25,13 +27,44 @@ interface ImageControls {
   dragStartY: number
 }
 
-export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAnalysisComplete }: AnomalyViewerProps) {
+export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, transformerId, onAnalysisComplete }: AnomalyViewerProps) {
+  // Log props on mount
+  useEffect(() => {
+    console.log('🎯 [AnomalyViewer Mount] Props received:', {
+      inspectionId,
+      transformerId,
+      hasBaselineUrl: !!baselineUrl,
+      hasMaintenanceUrl: !!maintenanceUrl,
+      inspectionIdType: typeof inspectionId,
+      inspectionIdValue: inspectionId
+    })
+  }, [])
+  
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [anomalyData, setAnomalyData] = useState<AnomalyDetectionResponse | null>(null)
   const [hasAnalyzed, setHasAnalyzed] = useState(false)
   const [currentBoxes, setCurrentBoxes] = useState<any[]>([]) // Track current bounding boxes in real-time
+  const [deletedBoxes, setDeletedBoxes] = useState<any[]>([]) // Track deleted bounding boxes
   const [selectedBoxIndex, setSelectedBoxIndex] = useState<number | undefined>(undefined) // Track which box to select
+  const [currentUser, setCurrentUser] = useState<{ username: string } | null>(null)
+  const [isLoadingAnnotations, setIsLoadingAnnotations] = useState(false)
+  const [isSavingAnnotations, setIsSavingAnnotations] = useState(false)
+  const [hasLoadedPrevious, setHasLoadedPrevious] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  
+  // Debug: Log when hasUnsavedChanges state changes
+  useEffect(() => {
+    console.log('🔄 [State Change] hasUnsavedChanges =', hasUnsavedChanges)
+  }, [hasUnsavedChanges])
+  
+  // Fetch current user on component mount
+  useEffect(() => {
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => setCurrentUser(j?.user || null))
+      .catch(() => setCurrentUser(null))
+  }, [])
   
   // Zoom and pan controls for baseline image
   const [baselineControls, setBaselineControls] = useState<ImageControls>({
@@ -55,6 +88,82 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
   
   const baselineImageRef = useRef<HTMLDivElement>(null)
   const maintenanceImageRef = useRef<HTMLDivElement>(null)
+
+  // Handle manual save button click
+  const handleSaveChanges = async () => {
+    // Use logged-in user or "Guest" if not authenticated
+    const username = currentUser?.username || 'Guest'
+    
+    console.log('💾 [Save Button Click] Checking prerequisites:', {
+      inspectionId,
+      currentUser,
+      username,
+      inspectionIdType: typeof inspectionId,
+      inspectionIdValue: inspectionId,
+      currentUserValue: currentUser
+    })
+    
+    if (!inspectionId) {
+      const errorMsg = 'Cannot save: Missing inspection ID'
+      console.error('❌ [Save Validation Failed]', errorMsg)
+      setError(errorMsg)
+      return
+    }
+
+    setIsSavingAnnotations(true)
+    setError(null)
+    console.log('💾 [Manual Save] Saving all annotations to database:', {
+      imageId: inspectionId,
+      transformerId: transformerId || 'N/A',
+      userId: username,
+      activeBoxes: currentBoxes.length,
+      deletedBoxes: deletedBoxes.length
+    })
+
+    try {
+      const result = await saveAnnotationsRealtime(
+        inspectionId,
+        username,
+        transformerId,
+        currentBoxes,
+        deletedBoxes
+      )
+      
+      if (result && result.annotations) {
+        console.log('✅ [Manual Save] Successfully saved', result.count, 'annotations')
+        console.log('🔄 [Manual Save] Syncing backend UUIDs to frontend state')
+        
+        // Update frontend boxes with backend-generated UUIDs
+        // This ensures subsequent saves use the same deterministic UUIDs
+        const updatedBoxes = currentBoxes.map((box, index) => {
+          const savedAnnotation = result.annotations?.[index]
+          if (savedAnnotation?.id) {
+            console.log(`  → Box #${index + 1}: ${box.id} → ${savedAnnotation.id}`)
+            return {
+              ...box,
+              id: savedAnnotation.id // Replace temp ID with backend UUID
+            }
+          }
+          return box
+        })
+        
+        setCurrentBoxes(updatedBoxes)
+        setHasUnsavedChanges(false)
+        
+        // Show success message briefly
+        const successMsg = `✅ Saved ${result.count} annotation${result.count !== 1 ? 's' : ''} successfully`
+        setError(successMsg)
+        setTimeout(() => setError(null), 3000)
+      } else {
+        setError('⚠️ Failed to save annotations. Please try again.')
+      }
+    } catch (error) {
+      console.error('❌ [Manual Save] Failed to save annotations:', error)
+      setError('❌ Error saving annotations. Please try again.')
+    } finally {
+      setIsSavingAnnotations(false)
+    }
+  }
 
   // Handle analyze button click
   const handleAnalyze = async () => {
@@ -84,6 +193,39 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
         setAnomalyData(result)
         setHasAnalyzed(true)
         
+        // Convert AI detections to BoundingBox format (but don't save yet)
+        if (result.detections && result.detections.length > 0) {
+          console.log('� [AI Detections] Converting AI detections to bounding boxes...')
+          
+          const aiBoxes = result.detections.map((detection: any, index: number) => {
+            const { severity } = extractSeverity(detection.type || detection.label)
+            return {
+              id: `ai-${Date.now()}-${index}`,
+              x: detection.bbox[0],
+              y: detection.bbox[1],
+              width: detection.bbox[2],
+              height: detection.bbox[3],
+              label: detection.type || detection.label,
+              confidence: detection.confidence || 0.5,
+              severity: severity,
+              color: severity === 'Critical' ? '#ef4444' : severity === 'Warning' ? '#f59e0b' : '#eab308',
+              action: 'added',
+              isAI: true,
+              timestamp: new Date().toISOString(),
+              userId: 'AI',
+              notes: 'AI-generated detection',
+              lastModified: new Date().toISOString(),
+              modificationTypes: ['created'],
+              modificationDetails: 'AI Detection'
+            }
+          })
+          
+          // Update currentBoxes so they appear in the UI (but not saved to DB yet)
+          setCurrentBoxes(aiBoxes)
+          setHasUnsavedChanges(true) // Mark as having unsaved changes
+          console.log('✅ [AI Detections] Loaded', aiBoxes.length, 'AI detections (not saved yet - click Save Changes)')
+        }
+        
         // Notify parent component that analysis is complete
         if (onAnalysisComplete) {
           console.log("🔄 [Anomaly Viewer] Notifying parent of analysis completion")
@@ -97,6 +239,106 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
       setError("An error occurred while detecting anomalies.")
     } finally {
       setAnalyzing(false)
+    }
+  }
+
+  // Handle loading previous detections from backend
+  const handleLoadPrevious = async () => {
+    if (!inspectionId) {
+      setError("No inspection ID available")
+      return
+    }
+
+    setIsLoadingAnnotations(true)
+    setError(null)
+
+    try {
+      const annotations = await getInspectionAnnotations(inspectionId)
+      
+      if (annotations && annotations.length > 0) {
+        // Separate active and deleted annotations
+        const active = annotations.filter((a: any) => a.action !== 'deleted')
+        const deleted = annotations.filter((a: any) => a.action === 'deleted')
+        
+        // Convert AnnotationDTO to BoundingBox format
+        const activeBoxes = active.map((a: any) => ({
+          id: a.id || `user-${Date.now()}-${Math.random()}`,
+          x: a.x,
+          y: a.y,
+          width: a.width,
+          height: a.height,
+          label: a.label,
+          confidence: a.confidence,
+          severity: a.severity,
+          color: a.severity === 'Critical' ? '#ef4444' : a.severity === 'Warning' ? '#f59e0b' : '#eab308',
+          action: a.action,
+          isAI: a.isAI,
+          timestamp: a.timestamp,
+          userId: a.userId,
+          notes: a.notes,
+          lastModified: a.lastModified,
+          modificationTypes: a.modificationTypes || [],
+          modificationDetails: a.modificationDetails
+        }))
+        
+        const deletedBoxes = deleted.map((a: any) => ({
+          id: a.id || `user-${Date.now()}-${Math.random()}`,
+          x: a.x,
+          y: a.y,
+          width: a.width,
+          height: a.height,
+          label: a.label,
+          confidence: a.confidence,
+          severity: a.severity,
+          color: a.severity === 'Critical' ? '#ef4444' : a.severity === 'Warning' ? '#f59e0b' : '#eab308',
+          action: 'deleted',
+          isAI: a.isAI,
+          timestamp: a.timestamp,
+          userId: a.userId,
+          notes: a.notes,
+          lastModified: a.lastModified,
+          modificationTypes: a.modificationTypes || [],
+          modificationDetails: a.modificationDetails
+        }))
+        
+        setCurrentBoxes(activeBoxes)
+        setDeletedBoxes(deletedBoxes)
+        setHasLoadedPrevious(true)
+        setHasAnalyzed(true)
+        setHasUnsavedChanges(false)
+        
+        // Create a synthetic anomalyData object so the canvas displays the loaded boxes
+        // Include ALL boxes (active + deleted) so they can be properly displayed
+        const allBoxesForDisplay = [...activeBoxes, ...deletedBoxes]
+        const syntheticDetections = allBoxesForDisplay.map((box: any) => ({
+          bbox: [box.x, box.y, box.width, box.height],
+          type: box.label,
+          confidence: box.confidence || 1.0,
+          // Include extra metadata to preserve in canvas
+          severity: box.severity,
+          action: box.action,
+          isAI: box.isAI,
+          userId: box.userId,
+          notes: box.notes,
+          id: box.id
+        }))
+        
+        setAnomalyData({
+          label: allBoxesForDisplay.length > 0 ? 'Previous Detections' : 'No Anomalies',
+          detections: syntheticDetections,
+          overlayImage: maintenanceUrl,
+          originalImage: maintenanceUrl,
+          heatmapImage: maintenanceUrl,
+          maskImage: maintenanceUrl
+        })
+      } else {
+        setError('No previous detections found for this inspection.')
+      }
+    } catch (err) {
+      console.error('Failed to load annotations:', err)
+      setError('Failed to load previous detections. Please try again.')
+    } finally {
+      setIsLoadingAnnotations(false)
     }
   }
 
@@ -252,70 +494,166 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
               </CardDescription>
             </div>
             {!hasAnalyzed && (
-              <Button 
-                onClick={handleAnalyze} 
-                disabled={analyzing || !maintenanceUrl}
-                className="gap-2"
-              >
-                {analyzing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Detect Anomalies
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-3">
+                <Button 
+                  onClick={handleAnalyze} 
+                  disabled={analyzing || !maintenanceUrl || isLoadingAnnotations}
+                  className="gap-2"
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      Detect Anomalies
+                    </>
+                  )}
+                </Button>
+                
+                <Button 
+                  onClick={handleLoadPrevious} 
+                  disabled={isLoadingAnnotations || analyzing || !inspectionId}
+                  variant="outline"
+                  className="gap-2"
+                >
+                  {isLoadingAnnotations ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="h-4 w-4" />
+                      Load Previous Detections
+                    </>
+                  )}
+                </Button>
+              </div>
             )}
           </div>
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* Error Message */}
+          {/* Error/Success Message */}
           {error && (
-            <div className="p-4 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg">
-              <div className="flex items-center gap-2 text-red-800 dark:text-red-200">
-                <AlertCircle className="h-4 w-4" />
+            <div className={`p-4 border rounded-lg ${
+              error.startsWith('✅') 
+                ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800' 
+                : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+            }`}>
+              <div className={`flex items-center gap-2 ${
+                error.startsWith('✅') 
+                  ? 'text-green-800 dark:text-green-200' 
+                  : 'text-red-800 dark:text-red-200'
+              }`}>
+                {error.startsWith('✅') ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <AlertCircle className="h-4 w-4" />
+                )}
                 <p className="text-sm font-serif">{error}</p>
               </div>
             </div>
           )}
 
           {/* Analysis Result Header */}
-          {hasAnalyzed && anomalyData && (
-            <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-              <div className="flex items-center gap-3">
-                {(() => {
-                  const badge = getStatusBadge(anomalyData.label)
-                  const Icon = badge.icon
-                  return (
+          {hasAnalyzed && (
+            <>
+              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                <div className="flex items-center gap-3">
+                  {hasLoadedPrevious ? (
                     <>
-                      <div className={`p-2 rounded-full ${badge.bg}`}>
-                        <Icon className={`h-5 w-5 ${badge.color}`} />
+                      <div className="p-2 rounded-full bg-blue-100">
+                        <Database className="h-5 w-5 text-blue-600" />
                       </div>
                       <div>
-                        <h3 className="font-semibold">Analysis Result: {anomalyData.label}</h3>
+                        <h3 className="font-semibold">Previous Detections Loaded</h3>
                         <p className="text-sm text-muted-foreground">
-                          {anomalyData.detections.length === 0
-                            ? "No anomalies detected"
-                            : `${anomalyData.detections.length} anomaly${anomalyData.detections.length > 1 ? "ies" : ""} detected`}
+                          {currentBoxes.length === 0
+                            ? "No saved annotations found"
+                            : `${currentBoxes.length} annotation${currentBoxes.length > 1 ? "s" : ""} loaded from database`}
                         </p>
                       </div>
                     </>
-                  )
-                })()}
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <div className="flex items-center gap-2 px-3 py-1 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-full text-xs font-semibold">
-                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                  LIVE API DATA
+                  ) : anomalyData ? (
+                    <>
+                      {(() => {
+                        const badge = getStatusBadge(anomalyData.label)
+                        const Icon = badge.icon
+                        return (
+                          <>
+                            <div className={`p-2 rounded-full ${badge.bg}`}>
+                              <Icon className={`h-5 w-5 ${badge.color}`} />
+                            </div>
+                            <div>
+                              <h3 className="font-semibold">Analysis Result: {anomalyData.label}</h3>
+                              <p className="text-sm text-muted-foreground">
+                                {anomalyData.detections.length === 0
+                                  ? "No anomalies detected"
+                                  : `${anomalyData.detections.length} anomaly${anomalyData.detections.length > 1 ? "ies" : ""} detected`}
+                              </p>
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </>
+                  ) : null}
                 </div>
-                <p className="text-xs text-muted-foreground">Hugging Face Model</p>
+                {anomalyData && (
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-2 px-3 py-1 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-full text-xs font-semibold">
+                      <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                      LIVE API DATA
+                    </div>
+                    <p className="text-xs text-muted-foreground">Hugging Face Model</p>
+                  </div>
+                )}
               </div>
-            </div>
+
+              {/* Save and Load Buttons */}
+              <div className="flex items-center justify-end gap-3">
+                <Button 
+                  onClick={handleLoadPrevious} 
+                  disabled={isLoadingAnnotations || analyzing || !inspectionId}
+                  variant="outline"
+                  className="gap-2"
+                >
+                  {isLoadingAnnotations ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="h-4 w-4" />
+                      Load Previous Detections
+                    </>
+                  )}
+                </Button>
+
+                <Button 
+                  onClick={handleSaveChanges} 
+                  disabled={isSavingAnnotations}
+                  className="gap-2"
+                  variant={hasUnsavedChanges ? "default" : "secondary"}
+                >
+                  {isSavingAnnotations ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" />
+                      {hasUnsavedChanges ? "Save Changes" : "Saved"}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
           )}
 
           {/* Side-by-Side Images with Controls */}
@@ -451,19 +789,20 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
                   <CanvasAnnotationEditor
                     imageUrl={anomalyData?.originalImage || maintenanceUrl}
                     imageId={inspectionId || 'temp-id'}
-                    userId="admin"
+                    userId={currentUser?.username || 'Guest'}
                     initialDetections={anomalyData?.detections || []}
                     compact={true}
                     selectedBoxIndex={selectedBoxIndex}
-                    onBoxesChange={(boxes) => {
-                      // Update current boxes in real-time (without saving to backend)
+                    onBoxesChange={(boxes, deleted) => {
+                      // Update current boxes and deleted boxes in real-time
+                      console.log('📝 [Boxes Changed]', {
+                        activeBoxes: boxes.length,
+                        deletedBoxes: deleted.length,
+                        settingUnsavedChanges: true
+                      })
                       setCurrentBoxes(boxes)
-                    }}
-                    onSave={(annotations: any) => {
-                      console.log('✅ Annotations saved:', annotations)
-                      if (onAnalysisComplete) {
-                        onAnalysisComplete()
-                      }
+                      setDeletedBoxes(deleted)
+                      setHasUnsavedChanges(true) // Mark as having unsaved changes
                     }}
                   />
                 </div>
@@ -477,7 +816,21 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
       {hasAnalyzed && currentBoxes.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="font-sans">Detected Anomalies</CardTitle>
+            <CardTitle className="font-sans flex items-center justify-between">
+              <span>Detected Anomalies</span>
+              {isSavingAnnotations && (
+                <Badge variant="outline" className="ml-2 font-normal">
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Saving...
+                </Badge>
+              )}
+              {isLoadingAnnotations && (
+                <Badge variant="outline" className="ml-2 font-normal">
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Loading...
+                </Badge>
+              )}
+            </CardTitle>
             <CardDescription className="font-serif">
               Detailed information about detected thermal anomalies with metadata
             </CardDescription>
@@ -494,13 +847,31 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
                 const uncertain = isUncertain(box.confidence || 0)
                 const boxNumber = index + 1 // Box number for correlation with canvas
                 
+                // Check if the box has been edited
+                const isEdited = box.action === 'edited'
+                const isAdded = box.action === 'added'
+                
+                // Format timestamp
+                const formatTimestamp = (timestamp?: string) => {
+                  if (!timestamp) return 'N/A'
+                  const date = new Date(timestamp)
+                  return date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
+                }
+                
                 return (
                   <div
                     key={index}
-                    className={`flex items-start gap-3 justify-between p-4 rounded-lg transition-colors border-2 ${
-                      uncertain 
-                        ? 'bg-yellow-50 border-yellow-300 dark:bg-yellow-950 dark:border-yellow-700' 
-                        : 'bg-muted/50 border-transparent hover:bg-muted'
+                    className={`flex items-start gap-3 justify-between p-4 rounded-lg transition-all border-2 ${
+                      isEdited 
+                        ? 'bg-blue-50 border-blue-400 dark:bg-blue-950 dark:border-blue-600 shadow-md' 
+                        : uncertain 
+                          ? 'bg-yellow-50 border-yellow-300 dark:bg-yellow-950 dark:border-yellow-700' 
+                          : 'bg-muted/50 border-transparent hover:bg-muted'
                     }`}
                   >
                     {/* Box Number Badge - Clickable */}
@@ -524,7 +895,28 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
                       </div>
                     </div>
                     
-                    <div className="flex-1 space-y-2">{/* Priority Level & Source Type */}
+                    <div className="flex-1 space-y-2">
+                      {/* Action Type Badge */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Action Status */}
+                        {isEdited && (
+                          <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-600 font-semibold">
+                            ✏️ EDITED
+                          </Badge>
+                        )}
+                        {isAdded && (
+                          <Badge variant="outline" className="bg-green-100 text-green-700 border-green-400 dark:bg-green-900 dark:text-green-200 dark:border-green-600 font-semibold">
+                            ➕ ADDED
+                          </Badge>
+                        )}
+                        {box.action === 'confirmed' && (
+                          <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-400 dark:bg-gray-900 dark:text-gray-200 dark:border-gray-600">
+                            ✓ Confirmed
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      {/* Priority Level & Source Type */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge 
                           variant={
@@ -569,6 +961,33 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
                           {((box.confidence || 0) * 100).toFixed(1)}%
                         </Badge>
                       </div>
+                      
+                      {/* Timestamp and User Info */}
+                      <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-muted">
+                        {/* Show Modified info (prefer lastModified over timestamp) */}
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">Modified by:</span>
+                          <span className="text-blue-600 dark:text-blue-400">
+                            {box.isAI ? 'AI System' : (currentUser?.username || 'Guest')}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">Modified:</span>
+                          <span>{formatTimestamp(box.lastModified || box.timestamp)}</span>
+                        </div>
+                        {box.modificationDetails && (
+                          <div className="flex items-start gap-2 pt-1 bg-blue-50 dark:bg-blue-950 px-2 py-1 rounded">
+                            <span className="font-semibold">Change:</span>
+                            <span className="italic text-blue-700 dark:text-blue-300">{box.modificationDetails}</span>
+                          </div>
+                        )}
+                        {box.notes && (
+                          <div className="flex items-start gap-2 pt-1">
+                            <span className="font-semibold">Notes:</span>
+                            <span className="italic">{box.notes}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
@@ -607,8 +1026,116 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, onAna
         </Card>
       )}
 
+      {/* Deleted Anomalies Section */}
+      {hasAnalyzed && deletedBoxes.length > 0 && (
+        <Card className="border-red-200 bg-red-50/30 dark:bg-red-950/30 dark:border-red-800">
+          <CardHeader>
+            <CardTitle className="font-sans text-red-900 dark:text-red-100">Deleted Anomalies</CardTitle>
+            <CardDescription className="font-serif">
+              Anomalies that have been removed from the inspection
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {deletedBoxes.map((box, index) => {
+                const { severity, category } = box.severity 
+                  ? { severity: box.severity, category: box.label }
+                  : extractSeverity(box.label)
+                
+                // Format timestamp
+                const formatTimestamp = (timestamp?: string) => {
+                  if (!timestamp) return 'N/A'
+                  const date = new Date(timestamp)
+                  return date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
+                }
+                
+                return (
+                  <div
+                    key={`deleted-${index}`}
+                    className="flex items-start gap-3 justify-between p-4 rounded-lg bg-red-100 dark:bg-red-900/50 border-2 border-red-300 dark:border-red-700 opacity-75"
+                  >
+                    {/* Deleted Icon */}
+                    <div className="flex-shrink-0">
+                      <div 
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md bg-gray-500"
+                        title="Deleted anomaly"
+                      >
+                        <XCircle className="h-6 w-6" />
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1 space-y-2">
+                      {/* Deleted Badge */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className="bg-red-100 text-red-700 border-red-400 dark:bg-red-900 dark:text-red-200 dark:border-red-600 font-semibold">
+                          🗑️ DELETED
+                        </Badge>
+                        
+                        {/* Priority Level */}
+                        <Badge 
+                          variant={
+                            severity === 'Critical' ? 'destructive' : 
+                            severity === 'Warning' ? 'default' : 
+                            'secondary'
+                          }
+                          className="opacity-60"
+                        >
+                          {severity}
+                        </Badge>
+                        
+                        {/* AI vs User Created Badge */}
+                        {box.isAI ? (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-700 flex items-center gap-1 opacity-60">
+                            <Sparkles className="h-3 w-3" />
+                            AI Detected
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 dark:bg-green-950 dark:text-green-300 dark:border-green-700 opacity-60">
+                            👤 User Created
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Anomaly Label */}
+                      <div>
+                        <span className="font-semibold text-base line-through">{category}</span>
+                      </div>
+
+                      {/* Deletion Info */}
+                      <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-red-300 dark:border-red-700">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">Deleted by:</span>
+                          <span className="text-red-700 dark:text-red-300">
+                            {currentUser?.username || 'Guest'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">Deleted:</span>
+                          <span>{formatTimestamp(box.lastModified)}</span>
+                        </div>
+                        {box.modificationDetails && (
+                          <div className="flex items-start gap-2 pt-1 bg-red-200 dark:bg-red-900 px-2 py-1 rounded">
+                            <span className="font-semibold">Reason:</span>
+                            <span className="italic text-red-800 dark:text-red-200">{box.modificationDetails}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* No Anomalies Message */}
-      {hasAnalyzed && currentBoxes.length === 0 && (
+      {hasAnalyzed && currentBoxes.length === 0 && deletedBoxes.length === 0 && (
         <Card className="border-green-200 bg-green-50 dark:bg-green-950 dark:border-green-800">
           <CardContent className="p-6">
             <div className="flex items-center gap-3">

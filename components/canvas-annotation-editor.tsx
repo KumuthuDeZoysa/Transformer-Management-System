@@ -1,7 +1,6 @@
 "use client"
 
 import React, { useState, useRef, useEffect, useCallback } from "react"
-import { saveAnnotations, type AnnotationDTO } from "@/lib/annotation-api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -23,7 +22,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { 
-  Save, 
   Trash2, 
   Square,
   Undo,
@@ -46,6 +44,12 @@ interface BoundingBox {
   color: string
   action: 'added' | 'edited' | 'deleted' | 'confirmed'
   isAI?: boolean
+  timestamp?: string // When the annotation was created/modified
+  userId?: string // Who created/modified the annotation
+  notes?: string // Optional comments or notes
+  lastModified?: string // When it was last edited
+  modificationTypes?: ('relocated' | 'resized' | 'label-changed' | 'deleted' | 'created')[] // Array of all modifications made
+  modificationDetails?: string // Summary of all modifications
 }
 
 interface CanvasAnnotationEditorProps {
@@ -57,8 +61,7 @@ interface CanvasAnnotationEditorProps {
     type: string
     confidence: number
   }>
-  onSave?: (annotations: AnnotationDTO[]) => void
-  onBoxesChange?: (boxes: BoundingBox[]) => void // Real-time box updates
+  onBoxesChange?: (boxes: BoundingBox[], deletedBoxes: BoundingBox[]) => void // Real-time box updates including deleted
   selectedBoxIndex?: number // Index of box to select from parent
   compact?: boolean
 }
@@ -66,9 +69,8 @@ interface CanvasAnnotationEditorProps {
 export function CanvasAnnotationEditor({
   imageUrl,
   imageId,
-  userId = 'admin',
+  userId = 'Guest',
   initialDetections = [],
-  onSave,
   onBoxesChange,
   selectedBoxIndex,
   compact = false
@@ -77,12 +79,14 @@ export function CanvasAnnotationEditor({
   const containerRef = useRef<HTMLDivElement>(null)
   const lastMousePos = useRef({ x: 0, y: 0 })
   const [boxes, setBoxes] = useState<BoundingBox[]>([])
+  const [deletedBoxes, setDeletedBoxes] = useState<BoundingBox[]>([]) // Track deleted boxes
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [resizeHandle, setResizeHandle] = useState<string | null>(null)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [originalBox, setOriginalBox] = useState<BoundingBox | null>(null) // Track original box state before modification
   const [currentLabel, setCurrentLabel] = useState("New Warning")
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
@@ -90,7 +94,6 @@ export function CanvasAnnotationEditor({
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [history, setHistory] = useState<BoundingBox[][]>([])
   const [historyStep, setHistoryStep] = useState(0)
-  const [saving, setSaving] = useState(false)
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [imageSize, setImageSize] = useState({ width: 800, height: 600 })
   
@@ -128,30 +131,65 @@ export function CanvasAnnotationEditor({
   // Convert initial detections to bounding boxes
   useEffect(() => {
     if (initialDetections.length > 0 && boxes.length === 0) {
-      const initialBoxes: BoundingBox[] = initialDetections.map((det, index) => ({
-        id: `ai-${index}`,
-        x: det.bbox[0],
-        y: det.bbox[1],
-        width: det.bbox[2],
-        height: det.bbox[3],
-        label: det.type,
-        confidence: det.confidence,
-        color: getColorBySeverity(det.type, det.confidence),
-        action: 'confirmed' as const,
-        isAI: true
-      }))
-      setBoxes(initialBoxes)
-      setHistory([initialBoxes])
+      const initialBoxes: BoundingBox[] = initialDetections.map((det, index) => {
+        // Check if this detection has preserved metadata (from loaded annotations)
+        const hasMetadata = 'id' in det || 'severity' in det || 'action' in det
+        
+        if (hasMetadata) {
+          // This is a loaded annotation - preserve all its data
+          const detWithMeta = det as any
+          return {
+            id: detWithMeta.id || `loaded-${index}`,
+            x: det.bbox[0],
+            y: det.bbox[1],
+            width: det.bbox[2],
+            height: det.bbox[3],
+            label: det.type,
+            confidence: det.confidence,
+            severity: detWithMeta.severity,
+            color: detWithMeta.severity === 'Critical' ? '#ef4444' : detWithMeta.severity === 'Warning' ? '#f59e0b' : '#eab308',
+            action: detWithMeta.action || 'confirmed',
+            isAI: detWithMeta.isAI || false,
+            timestamp: new Date().toISOString(),
+            userId: detWithMeta.userId || userId,
+            notes: detWithMeta.notes
+          }
+        } else {
+          // This is a fresh AI detection
+          return {
+            id: `ai-${index}`,
+            x: det.bbox[0],
+            y: det.bbox[1],
+            width: det.bbox[2],
+            height: det.bbox[3],
+            label: det.type,
+            confidence: det.confidence,
+            color: getColorBySeverity(det.type, det.confidence),
+            action: 'confirmed' as const,
+            isAI: true,
+            timestamp: new Date().toISOString(),
+            userId: 'AI-System'
+          }
+        }
+      })
+      
+      // Separate active and deleted boxes
+      const activeBoxes = initialBoxes.filter(box => box.action !== 'deleted')
+      const deletedBoxesList = initialBoxes.filter(box => box.action === 'deleted')
+      
+      setBoxes(activeBoxes)
+      setDeletedBoxes(deletedBoxesList)
+      setHistory([activeBoxes])
       setHistoryStep(0)
     }
-  }, [initialDetections, boxes.length])
+  }, [initialDetections, boxes.length, userId])
 
   // Notify parent component when boxes change (real-time updates)
   useEffect(() => {
     if (onBoxesChange) {
-      onBoxesChange(boxes)
+      onBoxesChange(boxes, deletedBoxes)
     }
-  }, [boxes, onBoxesChange])
+  }, [boxes, deletedBoxes, onBoxesChange])
 
   // Select box when parent requests it via selectedBoxIndex
   useEffect(() => {
@@ -416,6 +454,7 @@ export function CanvasAnnotationEditor({
           setIsResizing(true)
           setResizeHandle(handle)
           setDragStart(pos)
+          setOriginalBox({ ...box }) // Save original box state
           return
         }
       }
@@ -438,6 +477,7 @@ export function CanvasAnnotationEditor({
         setSelectedId(boxes[i].id)
         setIsDragging(true)
         setDragStart({ x: pos.x - boxes[i].x, y: pos.y - boxes[i].y })
+        setOriginalBox({ ...boxes[i] }) // Save original box state
         clickedBox = true
         return
       }
@@ -479,7 +519,12 @@ export function CanvasAnnotationEditor({
       const newBoxes = boxes.map(b => {
         if (b.id !== selectedId) return b
 
-        let newBox = { ...b, action: b.isAI ? 'edited' as const : b.action }
+        let newBox = { 
+          ...b, 
+          action: b.isAI ? 'edited' as const : b.action,
+          lastModified: new Date().toISOString(),
+          userId: userId
+        }
 
         switch (resizeHandle) {
           case 'nw':
@@ -526,7 +571,9 @@ export function CanvasAnnotationEditor({
           ...b,
           x: newX,
           y: newY,
-          action: b.isAI ? 'edited' as const : b.action
+          action: b.isAI ? 'edited' as const : b.action,
+          lastModified: new Date().toISOString(),
+          userId: userId
         }
       })
       setBoxes(newBoxes)
@@ -570,7 +617,11 @@ export function CanvasAnnotationEditor({
             ? (severity === 'Critical' ? '#ef4444' : '#f59e0b')
             : getColorBySeverity(label),
           action: 'added',
-          isAI: false
+          isAI: false,
+          timestamp: new Date().toISOString(),
+          userId: userId,
+          modificationTypes: ['created'],
+          modificationDetails: 'Created'
         }
 
         const newBoxes = [...boxes, newBox]
@@ -587,10 +638,52 @@ export function CanvasAnnotationEditor({
       }
       setIsDrawing(false)
     } else if (isDragging || isResizing) {
+      // Calculate modification details
+      if (originalBox && selectedId) {
+        const currentBox = boxes.find(b => b.id === selectedId)
+        if (currentBox) {
+          let newModificationType: 'relocated' | 'resized' = 'relocated'
+          
+          if (isDragging) {
+            newModificationType = 'relocated'
+          } else if (isResizing) {
+            newModificationType = 'resized'
+          }
+          
+          // Update the box with modification details - add to existing modifications
+          const updatedBoxes = boxes.map(b => {
+            if (b.id === selectedId) {
+              // Get existing modification types or start with empty array
+              const existingTypes = b.modificationTypes || []
+              
+              // Add new modification type if not already present
+              const updatedTypes = existingTypes.includes(newModificationType)
+                ? existingTypes
+                : [...existingTypes, newModificationType]
+              
+              // Create readable modification summary
+              const modificationSummary = updatedTypes
+                .filter(type => type !== 'created') // Don't show 'created' in modifications
+                .map(type => type.charAt(0).toUpperCase() + type.slice(1))
+                .join(', ')
+              
+              return {
+                ...b,
+                modificationTypes: updatedTypes,
+                modificationDetails: modificationSummary
+              }
+            }
+            return b
+          })
+          setBoxes(updatedBoxes)
+        }
+      }
+      
       addToHistory(boxes)
       setIsDragging(false)
       setIsResizing(false)
       setResizeHandle(null)
+      setOriginalBox(null) // Clear original box state
     } else if (isPanning) {
       setIsPanning(false)
     }
@@ -621,6 +714,22 @@ export function CanvasAnnotationEditor({
 
   const handleDeleteBox = () => {
     if (!selectedId) return
+    
+    // Find the box being deleted
+    const deletedBox = boxes.find(b => b.id === selectedId)
+    if (deletedBox) {
+      // Add to deleted boxes array with deletion info
+      const deletedBoxWithInfo: BoundingBox = {
+        ...deletedBox,
+        action: 'deleted',
+        lastModified: new Date().toISOString(),
+        userId: userId,
+        modificationTypes: [...(deletedBox.modificationTypes || []), 'deleted'],
+        modificationDetails: `Deleted ${deletedBox.isAI ? 'AI-detected' : 'user-created'} anomaly`
+      }
+      setDeletedBoxes([...deletedBoxes, deletedBoxWithInfo])
+    }
+    
     const newBoxes = boxes.filter(b => b.id !== selectedId)
     setBoxes(newBoxes)
     setSelectedId(null)
@@ -633,11 +742,27 @@ export function CanvasAnnotationEditor({
 
     const newBoxes = boxes.map(box => {
       if (box.id === selectedId) {
+        // Get existing modification types or start with empty array
+        const existingTypes = box.modificationTypes || []
+        const updatedTypes: ('relocated' | 'resized' | 'label-changed' | 'deleted' | 'created')[] = existingTypes.includes('label-changed')
+          ? existingTypes
+          : [...existingTypes, 'label-changed']
+        
+        // Create readable modification summary
+        const modificationSummary = updatedTypes
+          .filter(type => type !== 'created')
+          .map(type => type === 'label-changed' ? 'Label changed' : type.charAt(0).toUpperCase() + type.slice(1))
+          .join(', ')
+        
         return {
           ...box,
           label: newLabel,
           color: getColorBySeverity(newLabel, box.confidence),
-          action: box.isAI ? 'edited' as const : box.action
+          action: box.isAI ? 'edited' as const : box.action,
+          lastModified: new Date().toISOString(),
+          userId: userId,
+          modificationTypes: updatedTypes,
+          modificationDetails: modificationSummary
         }
       }
       return box
@@ -702,55 +827,6 @@ export function CanvasAnnotationEditor({
     // Zoom only works with buttons for better control
   }
 
-  const handleSave = async () => {
-    setSaving(true)
-
-    try {
-      const annotations: AnnotationDTO[] = boxes.map(box => ({
-        id: box.id.startsWith('user-') || box.id.startsWith('ai-') ? undefined : box.id,
-        x: Math.round(box.x),
-        y: Math.round(box.y),
-        width: Math.round(box.width),
-        height: Math.round(box.height),
-        label: box.label,
-        confidence: box.confidence !== undefined ? box.confidence : 1.0, // Ensure confidence is always a number
-        action: box.action
-      }))
-
-      console.log('📤 Preparing to save annotations:', {
-        imageId,
-        userId,
-        annotationsCount: annotations.length,
-        annotations: annotations.map(a => ({
-          label: a.label,
-          confidence: a.confidence,
-          action: a.action
-        }))
-      })
-
-      const result = await saveAnnotations({
-        imageId,
-        userId,
-        annotations
-      })
-
-      if (result) {
-        console.log('✅ Annotations saved successfully:', result)
-        if (onSave) {
-          onSave(annotations)
-        }
-      } else {
-        console.error('❌ Failed to save annotations')
-        alert('Failed to save annotations. Please check the console for details.')
-      }
-    } catch (error) {
-      console.error('💥 Error saving annotations:', error)
-      alert(`Error saving annotations: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
   return (
     <div className={compact ? "space-y-2" : "space-y-4"}>
       {/* Compact Toolbar */}
@@ -789,10 +865,6 @@ export function CanvasAnnotationEditor({
             </Button>
             <Button variant="outline" size="sm" className="h-7 px-2" onClick={handleDeleteBox} disabled={!selectedId}>
               <Trash2 className="h-3 w-3" />
-            </Button>
-            <Button size="sm" className="h-7" onClick={handleSave} disabled={saving || boxes.length === 0}>
-              <Save className="h-3 w-3 mr-1" />
-              {saving ? 'Saving...' : 'Save'}
             </Button>
           </div>
           
@@ -869,10 +941,6 @@ export function CanvasAnnotationEditor({
                 <Button variant="outline" size="sm" onClick={handleDeleteBox} disabled={!selectedId}>
                   <Trash2 className="h-4 w-4 mr-1" />
                   Delete
-                </Button>
-                <Button onClick={handleSave} disabled={saving || boxes.length === 0}>
-                  <Save className="h-4 w-4 mr-2" />
-                  {saving ? 'Saving...' : 'Save Annotations'}
                 </Button>
               </div>
             </div>
