@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from "react"
 import { detectAnomalies, type AnomalyDetectionResponse } from "@/lib/anomaly-api"
 import { saveAnnotationsRealtime, getInspectionAnnotations } from "@/lib/annotation-api"
+import { useFeedbackLog } from "@/hooks/use-feedback-log"
+import type { ModelPredictions, FinalAnnotations, DetectionAnnotation } from "@/lib/types"
 import { CanvasAnnotationEditor } from "@/components/canvas-annotation-editor"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -52,6 +54,14 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
   const [isSavingAnnotations, setIsSavingAnnotations] = useState(false)
   const [hasLoadedPrevious, setHasLoadedPrevious] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [initialModelPredictions, setInitialModelPredictions] = useState<ModelPredictions | null>(null) // Store AI predictions for feedback logging
+  const [annotationStartTime, setAnnotationStartTime] = useState<number>(Date.now()) // Track time spent
+  
+  // Initialize feedback logging hook
+  const { submitFeedback, loading: feedbackLoading } = useFeedbackLog({
+    onSuccess: (id) => console.log('✅ [Feedback] Logged successfully:', id),
+    onError: (error) => console.error('❌ [Feedback] Failed to log:', error)
+  })
   
   // Debug: Log when hasUnsavedChanges state changes
   useEffect(() => {
@@ -121,6 +131,7 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
     })
 
     try {
+      // Step 1: Save annotations to database (existing functionality)
       const result = await saveAnnotationsRealtime(
         inspectionId,
         username,
@@ -134,7 +145,6 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
         console.log('🔄 [Manual Save] Syncing backend UUIDs to frontend state')
         
         // Update frontend boxes with backend-generated UUIDs
-        // This ensures subsequent saves use the same deterministic UUIDs
         const updatedBoxes = currentBoxes.map((box, index) => {
           const savedAnnotation = result.annotations?.[index]
           if (savedAnnotation?.id) {
@@ -149,6 +159,71 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
         
         setCurrentBoxes(updatedBoxes)
         setHasUnsavedChanges(false)
+        
+        // Step 2: Log feedback for model improvement (new functionality)
+        if (initialModelPredictions && initialModelPredictions.detections.length > 0) {
+          console.log('📊 [Feedback] Logging feedback for model improvement...')
+          
+          // Calculate user modifications
+          const added = currentBoxes.filter(b => b.action === 'added' && !b.isAI).length
+          const edited = currentBoxes.filter(b => b.action === 'edited').length
+          const confirmed = currentBoxes.filter(b => b.action === 'confirmed' && b.isAI).length
+          const deleted = deletedBoxes.length
+          
+          // Prepare final annotations
+          const finalAnnotations: FinalAnnotations = {
+            detections: updatedBoxes.map(box => ({
+              id: box.id,
+              x: box.x,
+              y: box.y,
+              width: box.width,
+              height: box.height,
+              label: box.label,
+              type: box.label,
+              confidence: box.confidence || 1.0,
+              severity: box.severity,
+              action: box.action,
+              annotationType: box.isAI ? 'AI_GENERATED' : 'USER_CREATED',
+              isAI: box.isAI,
+              notes: box.notes,
+              modificationTypes: box.modificationTypes,
+              modificationDetails: box.modificationDetails,
+              timestamp: box.timestamp,
+              color: box.color
+            })),
+            label: anomalyData?.label || 'Unknown',
+            detectionCount: updatedBoxes.length,
+            userModifications: { added, edited, deleted, confirmed },
+            metadata: {
+              totalChanges: added + edited + deleted,
+              timeSpentSeconds: Math.floor((Date.now() - annotationStartTime) / 1000)
+            }
+          }
+          
+          // Prepare annotator metadata
+          const annotatorMetadata = {
+            annotator_id: currentUser?.username || 'Guest',
+            annotator_name: currentUser?.username || 'Guest',
+            user_id: username,
+            username: username,
+            timestamp: new Date().toISOString(),
+            changes_made: added + edited + deleted,
+            time_spent_seconds: finalAnnotations.metadata?.timeSpentSeconds || 0,
+            notes: `Saved ${updatedBoxes.length} annotations (${added} added, ${edited} edited, ${deleted} deleted, ${confirmed} confirmed)`
+          }
+          
+          // Submit feedback log
+          await submitFeedback(
+            inspectionId,
+            initialModelPredictions,
+            finalAnnotations,
+            annotatorMetadata
+          )
+          
+          console.log('✅ [Feedback] Feedback logged successfully')
+        } else {
+          console.log('ℹ️ [Feedback] Skipping feedback logging (no initial AI predictions)')
+        }
         
         // Show success message briefly
         const successMsg = `✅ Saved ${result.count} annotation${result.count !== 1 ? 's' : ''} successfully`
@@ -219,6 +294,37 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
               modificationDetails: 'AI Detection'
             }
           })
+          
+          // Store initial model predictions for feedback logging
+          const modelPredictions: ModelPredictions = {
+            detections: aiBoxes.map(box => ({
+              x: box.x,
+              y: box.y,
+              width: box.width,
+              height: box.height,
+              label: box.label,
+              type: box.label,
+              confidence: box.confidence,
+              severity: box.severity as 'Critical' | 'Warning' | 'Uncertain',
+              isAI: true,
+              action: 'confirmed',
+              annotationType: 'AI_GENERATED',
+              color: box.color,
+              timestamp: box.timestamp
+            })),
+            label: result.label,
+            confidence: result.detections.reduce((sum, d) => sum + (d.confidence || 0), 0) / result.detections.length,
+            detectionCount: result.detections.length,
+            metadata: {
+              modelVersion: 'v1.0',
+              processingTime: 0, // Could be tracked if needed
+              imageUrl: maintenanceUrl
+            }
+          }
+          
+          setInitialModelPredictions(modelPredictions)
+          setAnnotationStartTime(Date.now()) // Reset timer when AI detections load
+          console.log('📊 [Feedback] Stored initial model predictions for feedback logging')
           
           // Update currentBoxes so they appear in the UI (but not saved to DB yet)
           setCurrentBoxes(aiBoxes)
