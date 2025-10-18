@@ -335,7 +335,11 @@ export function InteractiveAnnotationEditor({
         height: Math.round(box.height),
         label: box.label,
         confidence: box.confidence,
-        action: box.action
+        action: box.action,
+        userId: userId, // Always set the current user as the one making the changes
+        isAI: box.isAI,
+        severity: box.confidence && box.confidence >= 0.8 ? 'Critical' : 
+                 box.confidence && box.confidence >= 0.5 ? 'Warning' : 'Uncertain'
       }))
 
       const result = await saveAnnotations({

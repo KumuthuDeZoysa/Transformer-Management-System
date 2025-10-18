@@ -1074,7 +1074,7 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
                         <div className="flex items-center gap-2">
                           <span className="font-semibold">Modified by:</span>
                           <span className="text-blue-600 dark:text-blue-400">
-                            {box.isAI ? 'AI System' : (currentUser?.username || 'Guest')}
+                            {box.userId || (box.isAI ? 'AI System' : 'Unknown User')}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
