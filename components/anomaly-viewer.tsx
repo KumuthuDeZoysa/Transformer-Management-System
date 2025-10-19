@@ -9,7 +9,8 @@ import { CanvasAnnotationEditor } from "@/components/canvas-annotation-editor"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, AlertCircle, CheckCircle2, XCircle, Sparkles, ZoomIn, ZoomOut, Move, RotateCcw, Database, Save } from "lucide-react"
+import { Loader2, AlertCircle, CheckCircle2, XCircle, Sparkles, ZoomIn, ZoomOut, Move, RotateCcw, Database, Save, StickyNote } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
 
 interface AnomalyViewerProps {
   baselineUrl: string
@@ -56,6 +57,11 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [initialModelPredictions, setInitialModelPredictions] = useState<ModelPredictions | null>(null) // Store AI predictions for feedback logging
   const [annotationStartTime, setAnnotationStartTime] = useState<number>(Date.now()) // Track time spent
+  // Local UI state for notes editor visibility/content per box
+  const [noteEditor, setNoteEditor] = useState<{ [id: string]: { open: boolean; value: string } }>({})
+  // Bump version when pushing external note update to canvas
+  const [noteUpdateVersion, setNoteUpdateVersion] = useState(0)
+  const [lastNoteUpdate, setLastNoteUpdate] = useState<{ id: string; note: string; version: number } | undefined>(undefined)
   
   // Initialize feedback logging hook
   const { submitFeedback, loading: feedbackLoading } = useFeedbackLog({
@@ -270,12 +276,15 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
         
         // Convert AI detections to BoundingBox format (but don't save yet)
         if (result.detections && result.detections.length > 0) {
-          console.log('� [AI Detections] Converting AI detections to bounding boxes...')
+          console.log('🤖 [AI Detections] Converting AI detections to bounding boxes...')
           
+          const baseTimestamp = Date.now()
           const aiBoxes = result.detections.map((detection: any, index: number) => {
             const { severity } = extractSeverity(detection.type || detection.label)
+            // Add index to timestamp to ensure unique, ordered timestamps
+            const timestamp = new Date(baseTimestamp + index).toISOString()
             return {
-              id: `ai-${Date.now()}-${index}`,
+              id: `ai-${baseTimestamp}-${index}`,
               x: detection.bbox[0],
               y: detection.bbox[1],
               width: detection.bbox[2],
@@ -286,10 +295,10 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
               color: severity === 'Critical' ? '#ef4444' : severity === 'Warning' ? '#f59e0b' : '#eab308',
               action: 'added',
               isAI: true,
-              timestamp: new Date().toISOString(),
+              timestamp: timestamp,
               userId: 'AI',
               notes: 'AI-generated detection',
-              lastModified: new Date().toISOString(),
+              lastModified: timestamp,
               modificationTypes: ['created'],
               modificationDetails: 'AI Detection'
             }
@@ -362,9 +371,33 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
       const annotations = await getInspectionAnnotations(inspectionId)
       
       if (annotations && annotations.length > 0) {
+        console.log('📋 [Load Previous] Raw annotations from backend:', annotations.length)
+        
         // Separate active and deleted annotations
         const active = annotations.filter((a: any) => a.action !== 'deleted')
         const deleted = annotations.filter((a: any) => a.action === 'deleted')
+        
+        // Sort annotations by timestamp to maintain consistent ordering
+        // Primary sort: timestamp (earliest first)
+        // Secondary sort: id (for annotations created at same time)
+        active.sort((a: any, b: any) => {
+          const timeA = new Date(a.timestamp || a.lastModified || 0).getTime()
+          const timeB = new Date(b.timestamp || b.lastModified || 0).getTime()
+          if (timeA !== timeB) return timeA - timeB
+          // If timestamps are equal, sort by ID for consistency
+          return (a.id || '').localeCompare(b.id || '')
+        })
+        
+        console.log('📋 [Load Previous] Sorted active annotations:', active.map((a: any, i: number) => 
+          `#${i + 1}: ${a.label} (timestamp: ${a.timestamp})`
+        ))
+        
+        deleted.sort((a: any, b: any) => {
+          const timeA = new Date(a.timestamp || a.lastModified || 0).getTime()
+          const timeB = new Date(b.timestamp || b.lastModified || 0).getTime()
+          if (timeA !== timeB) return timeA - timeB
+          return (a.id || '').localeCompare(b.id || '')
+        })
         
         // Convert AnnotationDTO to BoundingBox format
         const activeBoxes = active.map((a: any) => ({
@@ -420,13 +453,17 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
           bbox: [box.x, box.y, box.width, box.height],
           type: box.label,
           confidence: box.confidence || 1.0,
-          // Include extra metadata to preserve in canvas
+          // Include ALL metadata to preserve in canvas
           severity: box.severity,
           action: box.action,
           isAI: box.isAI,
           userId: box.userId,
           notes: box.notes,
-          id: box.id
+          id: box.id,
+          timestamp: box.timestamp,
+          lastModified: box.lastModified,
+          modificationTypes: box.modificationTypes,
+          modificationDetails: box.modificationDetails
         }))
         
         setAnomalyData({
@@ -899,6 +936,7 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
                     initialDetections={anomalyData?.detections || []}
                     compact={true}
                     selectedBoxIndex={selectedBoxIndex}
+                    externalNoteUpdate={lastNoteUpdate}
                     onBoxesChange={(boxes, deleted) => {
                       // Update current boxes and deleted boxes in real-time
                       console.log('📝 [Boxes Changed]', {
@@ -1067,6 +1105,96 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
                           {((box.confidence || 0) * 100).toFixed(1)}%
                         </Badge>
                       </div>
+
+                      {/* Add Note button and editor */}
+                      <div className="pt-2">
+                        {/* Show saved notes if they exist and editor is closed */}
+                        {box.notes && !noteEditor[box.id]?.open && (
+                          <div className="mb-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <span className="font-semibold text-xs text-blue-900 dark:text-blue-100">Additional Note:</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => {
+                                  setNoteEditor(prev => ({
+                                    ...prev,
+                                    [box.id]: { open: true, value: box.notes || '' }
+                                  }))
+                                }}
+                              >
+                                Edit
+                              </Button>
+                            </div>
+                            <ul className="space-y-1 text-sm text-blue-800 dark:text-blue-200">
+                              {box.notes.split('\n').filter((line: string) => line.trim()).map((line: string, idx: number) => (
+                                <li key={idx} className="flex items-start gap-2">
+                                  <span className="text-blue-600 dark:text-blue-400 mt-0.5">•</span>
+                                  <span className="flex-1">{line.trim()}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1"
+                          onClick={() => {
+                            setNoteEditor(prev => ({
+                              ...prev,
+                              [box.id]: { open: !prev[box.id]?.open, value: prev[box.id]?.value ?? (box.notes || '') }
+                            }))
+                          }}
+                        >
+                          <StickyNote className="h-3.5 w-3.5" />
+                          {noteEditor[box.id]?.open ? 'Hide Note' : (box.notes ? 'Edit Note' : 'Add Note')}
+                        </Button>
+                        {noteEditor[box.id]?.open && (
+                          <div className="mt-2 space-y-2 p-3 bg-muted/50 border rounded-md">
+                            <Textarea
+                              placeholder="Type additional notes (one per line for bullet points)..."
+                              value={noteEditor[box.id]?.value ?? ''}
+                              onChange={(e) =>
+                                setNoteEditor(prev => ({
+                                  ...prev,
+                                  [box.id]: { open: true, value: e.target.value }
+                                }))
+                              }
+                              rows={3}
+                              className="resize-none"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  const value = noteEditor[box.id]?.value ?? ''
+                                  // Update local boxes so the list reflects immediately
+                                  setCurrentBoxes(prev => prev.map(b => (b.id === box.id ? { ...b, notes: value, lastModified: new Date().toISOString(), userId: currentUser?.username || 'Guest' } : b)))
+                                  setHasUnsavedChanges(true)
+                                  // Push update to canvas
+                                  const version = noteUpdateVersion + 1
+                                  setNoteUpdateVersion(version)
+                                  setLastNoteUpdate({ id: box.id, note: value, version })
+                                  // Close the editor after saving
+                                  setNoteEditor(prev => ({ ...prev, [box.id]: { open: false, value } }))
+                                }}
+                              >
+                                Save Note
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setNoteEditor(prev => ({ ...prev, [box.id]: { open: false, value: prev[box.id]?.value ?? '' } }))}
+                              >
+                                Close
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       
                       {/* Timestamp and User Info */}
                       <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-muted">
@@ -1085,12 +1213,6 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
                           <div className="flex items-start gap-2 pt-1 bg-blue-50 dark:bg-blue-950 px-2 py-1 rounded">
                             <span className="font-semibold">Change:</span>
                             <span className="italic text-blue-700 dark:text-blue-300">{box.modificationDetails}</span>
-                          </div>
-                        )}
-                        {box.notes && (
-                          <div className="flex items-start gap-2 pt-1">
-                            <span className="font-semibold">Notes:</span>
-                            <span className="italic">{box.notes}</span>
                           </div>
                         )}
                       </div>
@@ -1212,17 +1334,36 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
                         <span className="font-semibold text-base line-through">{category}</span>
                       </div>
 
+                      {/* Show saved notes if they exist (read-only for deleted anomalies) */}
+                      {box.notes && (
+                        <div className="pt-2">
+                          <div className="p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-md opacity-75">
+                            <div className="mb-1">
+                              <span className="font-semibold text-xs text-red-900 dark:text-red-100">Additional Note:</span>
+                            </div>
+                            <ul className="space-y-1 text-sm text-red-800 dark:text-red-200">
+                              {box.notes.split('\n').filter((line: string) => line.trim()).map((line: string, idx: number) => (
+                                <li key={idx} className="flex items-start gap-2">
+                                  <span className="text-red-600 dark:text-red-400 mt-0.5">•</span>
+                                  <span className="flex-1">{line.trim()}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Deletion Info */}
                       <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-red-300 dark:border-red-700">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold">Deleted by:</span>
                           <span className="text-red-700 dark:text-red-300">
-                            {currentUser?.username || 'Guest'}
+                            {box.userId || 'Unknown User'}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="font-semibold">Deleted:</span>
-                          <span>{formatTimestamp(box.lastModified)}</span>
+                          <span>{formatTimestamp(box.lastModified || box.timestamp)}</span>
                         </div>
                         {box.modificationDetails && (
                           <div className="flex items-start gap-2 pt-1 bg-red-200 dark:bg-red-900 px-2 py-1 rounded">

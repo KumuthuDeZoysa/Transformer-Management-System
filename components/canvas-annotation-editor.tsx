@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -64,6 +65,8 @@ interface CanvasAnnotationEditorProps {
   onBoxesChange?: (boxes: BoundingBox[], deletedBoxes: BoundingBox[]) => void // Real-time box updates including deleted
   selectedBoxIndex?: number // Index of box to select from parent
   compact?: boolean
+  // Optional: allow parent to push a note update into a specific box
+  externalNoteUpdate?: { id: string; note: string; version: number }
 }
 
 export function CanvasAnnotationEditor({
@@ -73,7 +76,8 @@ export function CanvasAnnotationEditor({
   initialDetections = [],
   onBoxesChange,
   selectedBoxIndex,
-  compact = false
+  compact = false,
+  externalNoteUpdate
 }: CanvasAnnotationEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -103,6 +107,11 @@ export function CanvasAnnotationEditor({
   const [newBoxSeverity, setNewBoxSeverity] = useState<"Critical" | "Warning">("Warning")
   const [newBoxConfidence, setNewBoxConfidence] = useState<number>(100)
   const [isDrawingNewBox, setIsDrawingNewBox] = useState(false)
+  
+  // Deletion dialog states
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [deleteReason, setDeleteReason] = useState("")
+  const [boxToDelete, setBoxToDelete] = useState<string | null>(null)
 
   // Load image
   useEffect(() => {
@@ -136,7 +145,7 @@ export function CanvasAnnotationEditor({
         const hasMetadata = 'id' in det || 'severity' in det || 'action' in det
         
         if (hasMetadata) {
-          // This is a loaded annotation - preserve all its data
+          // This is a loaded annotation - preserve ALL its data
           const detWithMeta = det as any
           return {
             id: detWithMeta.id || `loaded-${index}`,
@@ -150,9 +159,12 @@ export function CanvasAnnotationEditor({
             color: detWithMeta.severity === 'Critical' ? '#ef4444' : detWithMeta.severity === 'Warning' ? '#f59e0b' : '#eab308',
             action: detWithMeta.action || 'confirmed',
             isAI: detWithMeta.isAI || false,
-            timestamp: new Date().toISOString(),
+            timestamp: detWithMeta.timestamp || new Date().toISOString(),
             userId: detWithMeta.userId || userId,
-            notes: detWithMeta.notes
+            notes: detWithMeta.notes,
+            lastModified: detWithMeta.lastModified,
+            modificationTypes: detWithMeta.modificationTypes || [],
+            modificationDetails: detWithMeta.modificationDetails
           }
         } else {
           // This is a fresh AI detection
@@ -168,7 +180,9 @@ export function CanvasAnnotationEditor({
             action: 'confirmed' as const,
             isAI: true,
             timestamp: new Date().toISOString(),
-            userId: 'AI-System'
+            userId: 'AI-System',
+            modificationTypes: ['created'],
+            modificationDetails: 'AI Detection'
           }
         }
       })
@@ -190,6 +204,16 @@ export function CanvasAnnotationEditor({
       onBoxesChange(boxes, deletedBoxes)
     }
   }, [boxes, deletedBoxes, onBoxesChange])
+
+  // Apply external note updates from parent (e.g., from anomaly list UI)
+  useEffect(() => {
+    if (!externalNoteUpdate) return
+    const { id, note } = externalNoteUpdate
+    setBoxes(prev => prev.map(b => (b.id === id ? { ...b, notes: note, lastModified: new Date().toISOString(), userId } : b)))
+    // No history push here to keep it lightweight; parent handles save
+    // drawCanvas to reflect any visual indicators in future
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalNoteUpdate?.version])
 
   // Select box when parent requests it via selectedBoxIndex
   useEffect(() => {
@@ -715,25 +739,41 @@ export function CanvasAnnotationEditor({
   const handleDeleteBox = () => {
     if (!selectedId) return
     
+    // Show deletion dialog to get reason
+    setBoxToDelete(selectedId)
+    setDeleteReason("")
+    setShowDeleteDialog(true)
+  }
+  
+  // Confirm deletion with reason
+  const confirmDeleteBox = () => {
+    if (!boxToDelete) return
+    
     // Find the box being deleted
-    const deletedBox = boxes.find(b => b.id === selectedId)
+    const deletedBox = boxes.find(b => b.id === boxToDelete)
     if (deletedBox) {
-      // Add to deleted boxes array with deletion info
+      // Add to deleted boxes array with deletion info and user-provided reason
       const deletedBoxWithInfo: BoundingBox = {
         ...deletedBox,
         action: 'deleted',
         lastModified: new Date().toISOString(),
         userId: userId,
         modificationTypes: [...(deletedBox.modificationTypes || []), 'deleted'],
-        modificationDetails: `Deleted ${deletedBox.isAI ? 'AI-detected' : 'user-created'} anomaly`
+        modificationDetails: deleteReason || `Deleted ${deletedBox.isAI ? 'AI-detected' : 'user-created'} anomaly`,
+        notes: deleteReason // Store the deletion reason in notes as well
       }
       setDeletedBoxes([...deletedBoxes, deletedBoxWithInfo])
     }
     
-    const newBoxes = boxes.filter(b => b.id !== selectedId)
+    const newBoxes = boxes.filter(b => b.id !== boxToDelete)
     setBoxes(newBoxes)
     setSelectedId(null)
     addToHistory(newBoxes)
+    
+    // Close dialog and reset
+    setShowDeleteDialog(false)
+    setBoxToDelete(null)
+    setDeleteReason("")
   }
 
   // Function to update the selected box's label
@@ -1069,6 +1109,55 @@ export function CanvasAnnotationEditor({
             </Button>
             <Button onClick={handleDialogConfirm}>
               Start Drawing
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Deletion Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Bounding Box</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for deleting this anomaly. This helps maintain an audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-reason">Deletion Reason *</Label>
+              <Textarea
+                id="delete-reason"
+                placeholder="e.g., False positive, Duplicate detection, Not an anomaly..."
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                This reason will be recorded for tracking and quality assurance purposes.
+              </p>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowDeleteDialog(false)
+                setBoxToDelete(null)
+                setDeleteReason("")
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDeleteBox}
+              disabled={!deleteReason.trim()}
+            >
+              Delete Anomaly
             </Button>
           </DialogFooter>
         </DialogContent>
