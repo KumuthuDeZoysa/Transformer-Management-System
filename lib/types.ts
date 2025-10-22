@@ -112,3 +112,84 @@ export interface LoadingState {
   loading: boolean
   error: string | null
 }
+
+// Feedback logging types for model improvement
+export interface DetectionAnnotation {
+  id?: string
+  x: number
+  y: number
+  width: number
+  height: number
+  label: string
+  type?: string  // Error type (e.g., "Point Overload", "Thermal Hotspot")
+  confidence?: number
+  severity?: 'Critical' | 'Warning' | 'Uncertain'
+  action?: 'added' | 'edited' | 'deleted' | 'confirmed'
+  annotationType?: 'AI_GENERATED' | 'USER_CREATED' | 'USER_EDITED'
+  isAI?: boolean
+  notes?: string
+  timestamp?: string
+  color?: string
+  modificationTypes?: string[]
+  modificationDetails?: string
+}
+
+export interface ModelPredictions {
+  detections: DetectionAnnotation[]
+  label?: string  // Overall classification (e.g., "Normal", "Critical")
+  confidence?: number
+  detectionCount?: number
+  metadata?: {
+    modelVersion?: string
+    processingTime?: number
+    imageUrl?: string
+    [key: string]: any
+  }
+}
+
+export interface FinalAnnotations {
+  detections: DetectionAnnotation[]
+  label?: string
+  confidence?: number
+  detectionCount?: number
+  userModifications?: {
+    added?: number
+    edited?: number
+    deleted?: number
+    confirmed?: number
+  }
+  metadata?: {
+    totalChanges?: number
+    timeSpentSeconds?: number
+    [key: string]: any
+  }
+}
+
+export interface AnnotatorMetadata {
+  annotator_id?: string
+  annotator_name?: string
+  user_id?: string
+  username?: string
+  session_id?: string
+  timestamp?: string
+  changes_made?: number
+  time_spent_seconds?: number
+  notes?: string
+  [key: string]: any
+}
+
+export interface FeedbackLog {
+  id: string
+  image_id: string
+  model_predicted_anomalies: ModelPredictions | null
+  final_accepted_annotations: FinalAnnotations | null
+  annotator_metadata: AnnotatorMetadata | null
+  created_at: string
+}
+
+export interface CreateFeedbackLogRequest {
+  image_id: string
+  model_predicted_anomalies: ModelPredictions
+  final_accepted_annotations: FinalAnnotations
+  annotator_metadata?: AnnotatorMetadata
+}

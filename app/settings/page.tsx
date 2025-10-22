@@ -13,12 +13,16 @@ import { useState, useEffect } from "react"
 import backendApi, { type BackendTransformer } from "@/lib/backend-api"
 import { transformerApi } from "@/lib/mock-api"
 import { seedTransformers } from "@/lib/seed-transformers"
+import { checkFeedbackTableExists, seedSampleFeedback, FEEDBACK_TABLE_SQL } from "@/lib/feedback-db-setup"
 
 export default function SettingsPage() {
   const [transformers, setTransformers] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [seeded, setSeeded] = useState(false)
   const [backendConnected, setBackendConnected] = useState(false)
+  const [feedbackTableExists, setFeedbackTableExists] = useState(false)
+  const [checkingFeedbackTable, setCheckingFeedbackTable] = useState(true)
+  const [feedbackSeeding, setFeedbackSeeding] = useState(false)
 
   useEffect(() => {
     const loadTransformers = async () => {
@@ -70,6 +74,15 @@ export default function SettingsPage() {
     }
     
     loadTransformers()
+
+    // Check feedback table exists
+    const checkFeedbackTable = async () => {
+      setCheckingFeedbackTable(true)
+      const { exists } = await checkFeedbackTableExists()
+      setFeedbackTableExists(exists)
+      setCheckingFeedbackTable(false)
+    }
+    checkFeedbackTable()
   }, [seeded])
 
   async function handleSeed() {
@@ -81,6 +94,21 @@ export default function SettingsPage() {
       alert("Seeding failed: " + (e as any)?.message)
     }
     setLoading(false)
+  }
+
+  async function handleFeedbackSeed() {
+    setFeedbackSeeding(true)
+    try {
+      const success = await seedSampleFeedback()
+      if (success) {
+        alert("Sample feedback log created successfully!")
+      } else {
+        alert("Failed to create sample feedback. Make sure the table exists first.")
+      }
+    } catch (e) {
+      alert("Seeding failed: " + (e as any)?.message)
+    }
+    setFeedbackSeeding(false)
   }
 
   return (
@@ -171,7 +199,102 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
-          {/* Database seeding section removed */}
+
+          {/* Feedback Logging Database Schema */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="font-sans">Feedback Logging System</CardTitle>
+              <CardDescription className="font-serif">
+                Database table for storing user feedback on AI-generated anomaly detections
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <Label className="font-serif mb-1 block">Table Status</Label>
+                  <p className="text-sm text-muted-foreground font-serif">
+                    {checkingFeedbackTable ? (
+                      "Checking..."
+                    ) : feedbackTableExists ? (
+                      <span className="text-green-600">✓ feedback_logs table exists</span>
+                    ) : (
+                      <span className="text-amber-600">⚠ feedback_logs table not found - create it below</span>
+                    )}
+                  </p>
+                </div>
+                {feedbackTableExists && (
+                  <Button size="sm" onClick={handleFeedbackSeed} disabled={feedbackSeeding}>
+                    {feedbackSeeding ? "Seeding..." : "Add Sample Data"}
+                  </Button>
+                )}
+              </div>
+
+              {!feedbackTableExists && (
+                <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded">
+                  <p className="text-sm font-serif mb-2">
+                    <strong>Setup Required:</strong> The feedback_logs table needs to be created in your Supabase database.
+                  </p>
+                  <ol className="text-xs font-serif list-decimal list-inside space-y-1 mb-3">
+                    <li>Open your <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Supabase Dashboard</a></li>
+                    <li>Click <strong>SQL Editor</strong> in the left sidebar</li>
+                    <li>Click <strong>New Query</strong></li>
+                    <li>Copy the SQL below and paste it into the editor</li>
+                    <li>Click <strong>Run</strong> (or press Ctrl+Enter)</li>
+                    <li>Refresh this page to verify</li>
+                  </ol>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <Label className="font-serif mb-1 block">PostgreSQL Table Schema</Label>
+                <pre className="bg-muted rounded p-3 text-xs overflow-x-auto font-mono whitespace-pre">
+{FEEDBACK_TABLE_SQL}
+                </pre>
+              </div>
+
+              <div className="mb-4">
+                <Label className="font-serif mb-1 block">Table Structure</Label>
+                <div className="text-xs font-mono bg-muted rounded p-3">
+                  <div className="grid grid-cols-3 gap-2 font-bold mb-2">
+                    <div>Column</div>
+                    <div>Type</div>
+                    <div>Description</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>id</div>
+                    <div>UUID</div>
+                    <div>Primary key (auto-generated)</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>image_id</div>
+                    <div>VARCHAR(255)</div>
+                    <div>Thermal image identifier</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>model_predicted_anomalies</div>
+                    <div>JSONB</div>
+                    <div>AI model predictions</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>final_accepted_annotations</div>
+                    <div>JSONB</div>
+                    <div>User-verified annotations</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>annotator_metadata</div>
+                    <div>JSONB</div>
+                    <div>Annotator info & timestamp</div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>created_at</div>
+                    <div>TIMESTAMPTZ</div>
+                    <div>Record creation time</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Temperature Thresholds */}
           <Card>
             <CardHeader>

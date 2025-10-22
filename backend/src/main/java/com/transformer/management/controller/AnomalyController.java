@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -145,6 +147,63 @@ public class AnomalyController {
             logger.error("Error fetching detection history: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError()
                 .body(Map.of("error", "Failed to fetch detection history"));
+        }
+    }
+
+    /**
+     * Get a specific anomaly detection by ID with bounding box data
+     * GET /api/anomalies/{detectionId}
+     * 
+     * @param detectionId The detection ID
+     * @return The anomaly detection with bounding boxes
+     */
+    @GetMapping("/{detectionId}")
+    public ResponseEntity<?> getDetectionById(@PathVariable String detectionId) {
+        logger.info("Fetching detection by ID: {}", detectionId);
+        
+        try {
+            UUID id = UUID.fromString(detectionId);
+            AnomalyDetection detection = anomalyDetectionService.getDetectionById(id);
+            
+            if (detection == null) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            // Convert to DTO format for frontend
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", detection.getId());
+            response.put("originalImage", detection.getMaintenanceImageUrl());
+            response.put("overlayImage", detection.getOverlayImageUrl());
+            response.put("heatmapImage", detection.getHeatmapImageUrl());
+            response.put("maskImage", detection.getMaskImageUrl());
+            response.put("label", detection.getOverallLabel());
+            response.put("engineName", detection.getEngineName());
+            response.put("engineVersion", detection.getEngineVersion());
+            response.put("detectedAt", detection.getDetectedAt());
+            
+            // Parse detections JSON
+            if (detection.getDetectionsJson() != null) {
+                try {
+                    List<?> detections = new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readValue(detection.getDetectionsJson(), List.class);
+                    response.put("detections", detections);
+                } catch (Exception e) {
+                    logger.warn("Failed to parse detections JSON: {}", e.getMessage());
+                    response.put("detections", new ArrayList<>());
+                }
+            } else {
+                response.put("detections", new ArrayList<>());
+            }
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "Invalid detection ID format"));
+        } catch (Exception e) {
+            logger.error("Error fetching detection: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                .body(Map.of("error", "Failed to fetch detection"));
         }
     }
 

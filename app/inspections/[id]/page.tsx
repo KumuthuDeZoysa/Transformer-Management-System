@@ -972,6 +972,7 @@ export default function InspectionDetailPage() {
                   baselineUrl={getImageUrl(baselineImages[0].url)}
                   maintenanceUrl={getImageUrl(maintenanceImages[maintenanceImages.length - 1].url)}
                   inspectionId={inspectionId}
+                  transformerId={inspection?.transformer_id}
                   onAnalysisComplete={refreshInspectionStatus}
                 />
               </CardContent>
