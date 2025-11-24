@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Upload, ImageIcon, CheckCircle, Clock, Eye } from 'lucide-react'
 import Link from 'next/link'
 import { fetchInspections, updateInspection, type DbInspection } from '@/lib/inspections-api'
-import backendApi, { type BackendTransformer, type BackendInspection } from '@/lib/backend-api'
+import backendApi, { type BackendTransformer, type BackendInspection, imageApi, uploadApi } from '@/lib/backend-api'
 import { transformerApi } from '@/lib/mock-api'
 import { AnomalyViewer } from '@/components/anomaly-viewer'
 
@@ -174,32 +174,28 @@ export default function InspectionDetailPage() {
           
           console.log('✅ [Image Loading] Complete - Baseline:', baselineImage ? '1' : '0', ', Maintenance:', maintenanceOnly.length)
         } else {
-          // Fallback to Next.js API if backend is not available
-          console.warn('⚠️ Backend not available, using Next.js API fallback')
+          // Fallback to backend API with JWT if inspection not found
+          console.warn('⚠️ Inspection not found in backend, trying to load images directly')
           try {
-            const imagesResponse = await fetch(`/api/images?transformer_id=${currentInspection.transformer_id}`)
-            if (imagesResponse.ok) {
-              const imagesData = await imagesResponse.json()
-              const allImages = imagesData.items || []
-              
-              // Separate baseline and maintenance images using label-based logic
-              const baseline = allImages.filter((img: any) => 
-                img.label && img.label.includes('[baseline]')
-              )
-              const maintenance = allImages.filter((img: any) => 
-                img.label && (
-                  img.label.includes('[maintenance]') && (
-                    img.label.includes(inspectionId) ||
-                    img.label.includes(currentInspection.inspection_no || '')
-                  )
+            const allImages = await imageApi.getByTransformerId(currentInspection.transformer_id)
+            
+            // Separate baseline and maintenance images using label-based logic
+            const baseline = allImages.filter((img: any) => 
+              img.label && img.label.includes('[baseline]')
+            )
+            const maintenance = allImages.filter((img: any) => 
+              img.label && (
+                img.label.includes('[maintenance]') && (
+                  img.label.includes(inspectionId) ||
+                  img.label.includes(currentInspection.inspection_no || '')
                 )
               )
-              
-              setBaselineImages(baseline)
-              setMaintenanceImages(maintenance)
-            }
+            )
+            
+            setBaselineImages(baseline)
+            setMaintenanceImages(maintenance)
           } catch (error) {
-            console.error('❌ Failed to load images from Next.js API:', error)
+            console.error('❌ Failed to load images from backend API:', error)
             setBaselineImages([])
             setMaintenanceImages([])
           }
@@ -257,35 +253,31 @@ export default function InspectionDetailPage() {
       
       console.log('✅ [Refresh] Complete - Baseline:', baselineImage ? '1' : '0', ', Maintenance:', maintenanceOnly.length)
     } else {
-      // Fallback to Next.js API
-      console.warn('⚠️ Backend not available during refresh, using Next.js API')
+      // Fallback to backend API with JWT
+      console.warn('⚠️ Inspection not found in backend during refresh, loading images directly')
       try {
-        const imagesResponse = await fetch(`/api/images?transformer_id=${inspection.transformer_id}`)
-        if (imagesResponse.ok) {
-          const imagesData = await imagesResponse.json()
-          const allImages = imagesData.items || []
-          
-          // Separate baseline and maintenance images using label-based logic
-          const baseline = allImages
-            .filter((img: any) => img.label && img.label.includes('[baseline]'))
-            .sort((a: any, b: any) => new Date(b.capturedAt || b.uploadedAt || 0).getTime() - new Date(a.capturedAt || a.uploadedAt || 0).getTime())
-          
-          const maintenance = allImages.filter((img: any) => 
-            img.label && (
-              img.label.includes('[maintenance]') && (
-                img.label.includes(inspectionId) ||
-                !img.label.match(/\[inspection:([a-f0-9-]+)\]/) ||
-                img.label.match(/\[inspection:([a-f0-9-]+)\]/)?.[1] === inspectionId
-              )
+        const allImages = await imageApi.getByTransformerId(inspection.transformer_id)
+        
+        // Separate baseline and maintenance images using label-based logic
+        const baseline = allImages
+          .filter((img: any) => img.label && img.label.includes('[baseline]'))
+          .sort((a: any, b: any) => new Date(b.capturedAt || b.uploadedAt || 0).getTime() - new Date(a.capturedAt || a.uploadedAt || 0).getTime())
+        
+        const maintenance = allImages.filter((img: any) => 
+          img.label && (
+            img.label.includes('[maintenance]') && (
+              img.label.includes(inspectionId) ||
+              !img.label.match(/\[inspection:([a-f0-9-]+)\]/) ||
+              img.label.match(/\[inspection:([a-f0-9-]+)\]/)?.[1] === inspectionId
             )
           )
-          
-          setBaselineImages(baseline.slice(0, 1))
-          setMaintenanceImages(maintenance)
-          console.log('✅ [Refresh] Complete (Next.js API) - Baseline:', baseline.length > 0 ? '1' : '0', ', Maintenance:', maintenance.length)
-        }
+        )
+        
+        setBaselineImages(baseline.slice(0, 1))
+        setMaintenanceImages(maintenance)
+        console.log('✅ [Refresh] Complete (Backend API) - Baseline:', baseline.length > 0 ? '1' : '0', ', Maintenance:', maintenance.length)
       } catch (error) {
-        console.error('❌ Failed to refresh images via Next.js API:', error)
+        console.error('❌ Failed to refresh images via backend API:', error)
       }
     }
   }
@@ -376,12 +368,19 @@ export default function InspectionDetailPage() {
         }
         form.append('label', structuredLabel);
 
-        const resp = await fetch('/api/upload-image', {
-          method: 'POST',
-          body: form,
-        })
-        uploadResult = await resp.json().catch(() => null)
-        if (!resp.ok) throw new Error((uploadResult && uploadResult.error) || 'Upload failed')
+        // Use backend API uploadImageToBackend with JWT authentication
+        if (!inspection) throw new Error('Inspection not found')
+        
+        uploadResult = await uploadApi.uploadImageToBackend(
+          selectedFile,
+          inspection.transformer_id,
+          imageType as 'baseline' | 'maintenance',
+          uploaderName,
+          environmentalCondition as 'sunny' | 'cloudy' | 'rainy' | undefined,
+          comments || undefined,
+          inspectionId
+        )
+        if (!uploadResult) throw new Error('Upload failed')
       }
 
       const newUpload: ImageUpload = {

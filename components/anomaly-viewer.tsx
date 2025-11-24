@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { detectAnomalies, type AnomalyDetectionResponse } from "@/lib/anomaly-api"
 import { saveAnnotationsRealtime, getInspectionAnnotations } from "@/lib/annotation-api"
 import { useFeedbackLog } from "@/hooks/use-feedback-log"
+import { authApi } from "@/lib/auth-api"
 import type { ModelPredictions, FinalAnnotations, DetectionAnnotation } from "@/lib/types"
 import { CanvasAnnotationEditor } from "@/components/canvas-annotation-editor"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -76,10 +77,12 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
   
   // Fetch current user on component mount
   useEffect(() => {
-    fetch('/api/auth/me', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(j => setCurrentUser(j?.user || null))
-      .catch(() => setCurrentUser(null))
+    if (authApi.isAuthenticated()) {
+      const user = authApi.getCurrentUserLocal();
+      setCurrentUser(user);
+    } else {
+      setCurrentUser(null);
+    }
   }, [])
   
   // Zoom and pan controls for baseline image

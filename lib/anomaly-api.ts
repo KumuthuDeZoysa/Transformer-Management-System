@@ -1,5 +1,7 @@
 // Anomaly Detection API client for calling backend anomaly detection service
 
+import { tokenManager } from './jwt-token'
+
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'
 
 export interface AnomalyDetectionRequest {
@@ -44,6 +46,7 @@ export async function detectAnomalies(imageUrl: string, inspectionId?: string): 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
       body: JSON.stringify({ imageUrl, inspectionId }),
     })
@@ -78,6 +81,7 @@ export async function checkAnomalyApiHealth(): Promise<any | null> {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
     })
 

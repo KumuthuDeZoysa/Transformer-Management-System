@@ -14,6 +14,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { authApi } from "@/lib/auth-api"
+import { transformerApi } from "@/lib/backend-api"
 
 export function Header() {
   const recentAlerts = [
@@ -33,26 +35,48 @@ export function Header() {
       time: 'July 23, 2025 - 11:20 PM',
     },
   ]
-  const [user, setUser] = useState<{ username: string } | null>(null)
+  const [user, setUser] = useState<{ username: string; role?: string } | null>(null)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<Array<{ id: string; code: string | null; location: string | null }>>([])
   const [open, setOpen] = useState(false)
   const boxRef = useRef<HTMLDivElement | null>(null)
   const router = useRouter()
+  
   useEffect(() => {
-    fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.json()).then(j => setUser(j?.user || null)).catch(() => {})
+    // Load user from JWT token on mount
+    const loadUser = () => {
+      if (authApi.isAuthenticated()) {
+        const currentUser = authApi.getCurrentUserLocal();
+        setUser(currentUser);
+      } else {
+        setUser(null);
+      }
+    };
+    
+    loadUser();
+    
+    // Listen for storage events (for cross-tab synchronization)
+    window.addEventListener('storage', loadUser);
+    return () => window.removeEventListener('storage', loadUser);
   }, [])
 
   useEffect(() => {
     const t = setTimeout(async () => {
       if (!query) { setResults([]); return }
       try {
-        const res = await fetch(`/api/transformers?q=${encodeURIComponent(query)}&limit=8`, { cache: 'no-store' })
-        if (!res.ok) return
-        const data = await res.json()
-        setResults(Array.isArray(data) ? data : [])
+        // Search transformers using backend API with JWT auth
+        const allTransformers = await transformerApi.getAll()
+        // Filter by code on client side
+        const filtered = allTransformers.filter(t => 
+          t.code?.toLowerCase().includes(query.toLowerCase()) ||
+          t.id?.toLowerCase().includes(query.toLowerCase())
+        ).slice(0, 8)
+        setResults(filtered || [])
         setOpen(true)
-      } catch {}
+      } catch (err) {
+        console.error('Search failed:', err)
+        setResults([])
+      }
     }, 150)
     return () => clearTimeout(t)
   }, [query])
@@ -148,7 +172,11 @@ export function Header() {
               <DropdownMenuItem onClick={() => router.push('/settings')}>Settings</DropdownMenuItem>
               <DropdownMenuSeparator />
               {user ? (
-                <DropdownMenuItem onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); router.replace('/login') }}>Sign out</DropdownMenuItem>
+                <DropdownMenuItem onClick={async () => { 
+                  await authApi.logout(); 
+                  setUser(null);
+                  router.replace('/login');
+                }}>Sign out</DropdownMenuItem>
               ) : (
                 <DropdownMenuItem onClick={() => router.push('/login')}>Sign in</DropdownMenuItem>
               )}
