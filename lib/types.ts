@@ -193,3 +193,46 @@ export interface CreateFeedbackLogRequest {
   final_accepted_annotations: FinalAnnotations
   annotator_metadata?: AnnotatorMetadata
 }
+
+// Phase 4: Maintenance Record types
+export interface MaintenanceRecord {
+  id: string
+  inspection: { id: string }
+  transformer: { id: string }
+  inspectorName: string | null
+  transformerStatus: 'OK' | 'Needs Maintenance' | 'Urgent Attention' | null
+  voltageReading: string | null
+  currentReading: string | null
+  powerFactor: string | null
+  temperature: string | null
+  recommendedAction: string | null
+  additionalRemarks: string | null
+  completionDate: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateMaintenanceRecordRequest {
+  inspectionId: string
+  inspectorName?: string
+  transformerStatus?: 'OK' | 'Needs Maintenance' | 'Urgent Attention'
+  voltageReading?: string
+  currentReading?: string
+  powerFactor?: string
+  temperature?: string
+  recommendedAction?: string
+  additionalRemarks?: string
+  completionDate?: string
+}
+
+export interface UpdateMaintenanceRecordRequest {
+  inspectorName?: string
+  transformerStatus?: 'OK' | 'Needs Maintenance' | 'Urgent Attention'
+  voltageReading?: string
+  currentReading?: string
+  powerFactor?: string
+  temperature?: string
+  recommendedAction?: string
+  additionalRemarks?: string
+  completionDate?: string
+}

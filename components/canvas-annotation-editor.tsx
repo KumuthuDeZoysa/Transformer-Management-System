@@ -67,6 +67,7 @@ interface CanvasAnnotationEditorProps {
   compact?: boolean
   // Optional: allow parent to push a note update into a specific box
   externalNoteUpdate?: { id: string; note: string; version: number }
+  onExportCanvas?: (exportFn: () => string | null) => void // Callback to provide canvas export function
 }
 
 export function CanvasAnnotationEditor({
@@ -77,7 +78,8 @@ export function CanvasAnnotationEditor({
   onBoxesChange,
   selectedBoxIndex,
   compact = false,
-  externalNoteUpdate
+  externalNoteUpdate,
+  onExportCanvas
 }: CanvasAnnotationEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -204,6 +206,31 @@ export function CanvasAnnotationEditor({
       onBoxesChange(boxes, deletedBoxes)
     }
   }, [boxes, deletedBoxes, onBoxesChange])
+
+  // Register canvas export function with parent
+  useEffect(() => {
+    if (onExportCanvas) {
+      const exportFunction = () => {
+        const canvas = canvasRef.current
+        if (!canvas) {
+          console.error('❌ [Canvas Export] Canvas ref is null')
+          return null
+        }
+        try {
+          console.log('📸 [Canvas Export] Exporting canvas with dimensions:', canvas.width, 'x', canvas.height)
+          console.log('📸 [Canvas Export] Current boxes count:', boxes.length)
+          const dataUrl = canvas.toDataURL('image/png')
+          console.log('✅ [Canvas Export] Successfully exported canvas, data URL length:', dataUrl.length)
+          return dataUrl
+        } catch (error) {
+          console.error('❌ [Canvas Export] Failed to export canvas:', error)
+          return null
+        }
+      }
+      onExportCanvas(exportFunction)
+      console.log('📝 [Canvas Export] Export function registered with parent')
+    }
+  }, [onExportCanvas, boxes.length])
 
   // Apply external note updates from parent (e.g., from anomaly list UI)
   useEffect(() => {

@@ -57,6 +57,7 @@ public class SecurityConfig {
                 // Public endpoints - no authentication required
                 .requestMatchers("/auth/login", "/auth/signup", "/auth/test").permitAll()
                 .requestMatchers("/health/**").permitAll()
+                .requestMatchers("/anomalies/**").permitAll()
                 // All other endpoints require authentication
                 .anyRequest().authenticated()
             )
