@@ -8,6 +8,9 @@ import com.transformer.management.repository.InspectionRepository;
 import com.transformer.management.repository.TransformerRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -92,9 +95,15 @@ public class MaintenanceRecordController {
         }
     }
 
+    /**
+     * Create a new maintenance record.
+     * Only ENGINEER and ADMIN roles can create maintenance records.
+     */
     @PostMapping
+    @PreAuthorize("hasAnyRole('ENGINEER', 'ADMIN')")
     public ResponseEntity<MaintenanceRecord> createMaintenanceRecord(@RequestBody Map<String, Object> requestData) {
-        System.out.println("🔄 Creating new maintenance record with data: " + requestData);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        System.out.println("🔄 Creating new maintenance record. User: " + auth.getName() + ", Data: " + requestData);
         
         try {
             // Extract and validate inspection ID
@@ -175,9 +184,15 @@ public class MaintenanceRecordController {
         }
     }
 
+    /**
+     * Update an existing maintenance record.
+     * Only ENGINEER and ADMIN roles can update maintenance records.
+     */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ENGINEER', 'ADMIN')")
     public ResponseEntity<MaintenanceRecord> updateMaintenanceRecord(@PathVariable String id, @RequestBody Map<String, Object> requestData) {
-        System.out.println("🔄 Updating maintenance record with ID: " + id);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        System.out.println("🔄 Updating maintenance record " + id + ". User: " + auth.getName());
         
         try {
             UUID uuid = UUID.fromString(id);
@@ -244,9 +259,15 @@ public class MaintenanceRecordController {
         }
     }
 
+    /**
+     * Delete a maintenance record.
+     * Only ADMIN role can delete maintenance records.
+     */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteMaintenanceRecord(@PathVariable String id) {
-        System.out.println("🗑️ Deleting maintenance record with ID: " + id);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        System.out.println("🗑️ Deleting maintenance record " + id + ". User: " + auth.getName());
         
         try {
             UUID uuid = UUID.fromString(id);

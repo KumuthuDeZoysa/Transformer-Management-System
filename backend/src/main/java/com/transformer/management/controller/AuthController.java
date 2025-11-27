@@ -92,7 +92,9 @@ public class AuthController {
         User user = new User();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(password));
-        user.setRole(role != null ? role : "user");
+        // Only allow VIEWER role for public signup - security measure
+        // ENGINEER and ADMIN roles must be assigned by existing admins
+        user.setRole(User.ROLE_VIEWER);
 
         User savedUser = userRepository.save(user);
 

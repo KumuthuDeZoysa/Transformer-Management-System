@@ -8,9 +8,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Save, Printer, FileDown, CheckCircle } from 'lucide-react'
+import { Save, Printer, FileDown, CheckCircle, Lock } from 'lucide-react'
 import { MaintenanceRecord, CreateMaintenanceRecordRequest, UpdateMaintenanceRecordRequest } from '@/lib/types'
 import { maintenanceRecordApi } from '@/lib/maintenance-record-api'
+import { authApi } from '@/lib/auth-api'
 
 interface Detection {
   id: string
@@ -61,6 +62,8 @@ export function MaintenanceRecordForm({
 }: MaintenanceRecordFormProps) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [canEdit, setCanEdit] = useState(false)
+  const [userRole, setUserRole] = useState<string | null>(null)
   const [form, setForm] = useState({
     inspectorName: '',
     transformerStatus: '' as 'OK' | 'Needs Maintenance' | 'Urgent Attention' | '',
@@ -72,6 +75,15 @@ export function MaintenanceRecordForm({
     additionalRemarks: '',
     completionDate: '',
   })
+
+  // Check user role and permissions
+  useEffect(() => {
+    const user = authApi.getCurrentUserLocal()
+    if (user) {
+      setUserRole(user.role)
+      setCanEdit(authApi.canEditMaintenanceRecords())
+    }
+  }, [])
 
   // Load existing record if available
   useEffect(() => {
@@ -95,6 +107,13 @@ export function MaintenanceRecordForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Check if user has permission to save
+    if (!canEdit) {
+      alert('You do not have permission to save maintenance records. Only ENGINEER and ADMIN roles can edit records.')
+      return
+    }
+    
     setSaving(true)
     
     try {
@@ -123,7 +142,12 @@ export function MaintenanceRecordForm({
         onSave(record)
       }
     } catch (error: any) {
-      alert(error.message || 'Failed to save maintenance record')
+      // Check if it's an authorization error (403 Forbidden)
+      if (error.message?.includes('403') || error.message?.toLowerCase().includes('forbidden')) {
+        alert('Access Denied: You do not have permission to save maintenance records. Please contact an administrator.')
+      } else {
+        alert(error.message || 'Failed to save maintenance record')
+      }
     } finally {
       setSaving(false)
     }
@@ -148,6 +172,21 @@ export function MaintenanceRecordForm({
 
   return (
     <div className="space-y-6 print-maintenance-record">
+      {/* Role-based Access Control Banner */}
+      {!canEdit && (
+        <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4 no-print">
+          <div className="flex items-start gap-3">
+            <Lock className="h-5 w-5 text-amber-600 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-amber-900 dark:text-amber-100 font-sans">Read-Only Access</h4>
+              <p className="text-sm text-amber-700 dark:text-amber-300 font-serif mt-1">
+                Your role ({userRole || 'Unknown'}) has view-only permissions. Only ENGINEER and ADMIN users can edit maintenance records.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header Section - Print Header */}
       <div className="print-header">
         <div className="text-center mb-4">
@@ -344,6 +383,7 @@ export function MaintenanceRecordForm({
                   onChange={(e) => setForm({ ...form, inspectorName: e.target.value })}
                   placeholder="Enter inspector name"
                   className="font-serif mt-1"
+                  disabled={!canEdit}
                   required
                 />
               </div>
@@ -352,6 +392,7 @@ export function MaintenanceRecordForm({
                 <Select
                   value={form.transformerStatus}
                   onValueChange={(value) => setForm({ ...form, transformerStatus: value as any })}
+                  disabled={!canEdit}
                   required
                 >
                   <SelectTrigger className="font-serif mt-1">
@@ -376,6 +417,7 @@ export function MaintenanceRecordForm({
                   onChange={(e) => setForm({ ...form, voltageReading: e.target.value })}
                   placeholder="e.g. 11kV"
                   className="font-serif mt-1"
+                  disabled={!canEdit}
                 />
               </div>
               <div>
@@ -386,6 +428,7 @@ export function MaintenanceRecordForm({
                   onChange={(e) => setForm({ ...form, currentReading: e.target.value })}
                   placeholder="e.g. 150A"
                   className="font-serif mt-1"
+                  disabled={!canEdit}
                 />
               </div>
               <div>
@@ -396,6 +439,7 @@ export function MaintenanceRecordForm({
                   onChange={(e) => setForm({ ...form, powerFactor: e.target.value })}
                   placeholder="e.g. 0.95"
                   className="font-serif mt-1"
+                  disabled={!canEdit}
                 />
               </div>
               <div>
@@ -406,6 +450,7 @@ export function MaintenanceRecordForm({
                   onChange={(e) => setForm({ ...form, temperature: e.target.value })}
                   placeholder="e.g. 85°C"
                   className="font-serif mt-1"
+                  disabled={!canEdit}
                 />
               </div>
             </div>
@@ -420,6 +465,7 @@ export function MaintenanceRecordForm({
                   value={form.completionDate}
                   onChange={(e) => setForm({ ...form, completionDate: e.target.value })}
                   className="font-serif mt-1"
+                  disabled={!canEdit}
                 />
               </div>
             </div>
@@ -434,6 +480,7 @@ export function MaintenanceRecordForm({
                 placeholder="Describe recommended corrective actions..."
                 className="font-serif mt-1 resize-none"
                 rows={4}
+                disabled={!canEdit}
               />
             </div>
 
@@ -447,6 +494,7 @@ export function MaintenanceRecordForm({
                 placeholder="Any additional observations or notes..."
                 className="font-serif mt-1 resize-none"
                 rows={4}
+                disabled={!canEdit}
               />
             </div>
           </CardContent>
@@ -465,10 +513,15 @@ export function MaintenanceRecordForm({
           </Button>
           <Button
             type="submit"
-            disabled={saving || !form.inspectorName || !form.transformerStatus}
+            disabled={saving || !canEdit || !form.inspectorName || !form.transformerStatus}
             className="font-serif"
           >
-            {saving ? (
+            {!canEdit ? (
+              <>
+                <Lock className="mr-2 h-4 w-4" />
+                Read-Only Access
+              </>
+            ) : saving ? (
               <>Saving...</>
             ) : saved ? (
               <>

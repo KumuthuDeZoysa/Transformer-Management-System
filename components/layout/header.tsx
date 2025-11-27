@@ -157,16 +157,33 @@ export function Header() {
               <Button variant="ghost" className="flex items-center space-x-2">
                 <Avatar className="h-8 w-8 border-1 border-black shadow-sm">
                   <AvatarImage src="/placeholder-user.jpg" />
-                  <AvatarFallback className="bg-primary text-primary-foreground font-semibold">IP</AvatarFallback>
+                  <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+                    {user?.username ? user.username.substring(0, 2).toUpperCase() : 'IP'}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="text-left">
                   <div className="text-sm font-serif font-medium">{user?.username || 'Guest'}</div>
-                  <div className="text-xs text-muted-foreground">{user ? 'Signed in' : 'Not signed in'}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {user?.role ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                        {user.role}
+                      </span>
+                    ) : (
+                      'Not signed in'
+                    )}
+                  </div>
                 </div>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuLabel>
+                <div>My Account</div>
+                {user?.role && (
+                  <div className="text-xs font-normal text-muted-foreground mt-1">
+                    Role: <span className="font-semibold text-primary">{user.role}</span>
+                  </div>
+                )}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => router.push('/profile')}>Profile</DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/settings')}>Settings</DropdownMenuItem>

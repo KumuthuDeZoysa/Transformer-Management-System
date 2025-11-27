@@ -120,4 +120,23 @@ export const authApi = {
   getCurrentUserLocal() {
     return tokenManager.getUser();
   },
+
+  // Role-based access control helpers
+  hasRole(role: string): boolean {
+    const user = tokenManager.getUser();
+    return user?.role === role;
+  },
+
+  hasAnyRole(roles: string[]): boolean {
+    const user = tokenManager.getUser();
+    return user ? roles.includes(user.role) : false;
+  },
+
+  canEditMaintenanceRecords(): boolean {
+    return this.hasAnyRole(['ENGINEER', 'ADMIN']);
+  },
+
+  canDeleteMaintenanceRecords(): boolean {
+    return this.hasRole('ADMIN');
+  },
 };
