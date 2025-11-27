@@ -1,331 +1,397 @@
 # Transformer Management System
 
-A full-stack application for managing electrical transformers- Images
-  - Cloudinary-powered image upload (multipart/form-data)
-  - Image gallery with filters, search, preview modal, and download
-  - Images tagged with type (baseline/maintenance) and environmental conditions (sunny, cloudy, rainy)
-  - Metadata captured: Upload date/time, type, and uploader.
-
-- Anomaly Detection
-  - AI-powered thermal image analysis using PatchCore model
-  - Automatic classification of six fault types with confidence scoring
-  - Color-coded bounding boxes for visual anomaly identification
-  - Uncertain detection flagging (confidence < 60%) for manual review
-  - Complete detection history and metadata persistence
-  - Interactive anomaly viewer with detailed inspection metrics
-
-- Settings panel
-  - Displays Transformer database schema and shows current rows
-  - One-click seed for sample transformers from the UIions, and thermal images. The project includes a modern Next.js front end and a Java Spring Boot back end exposing REST endpoints. PostgreSQL (via Supabase) is used as the primary data store, and Cloudinary provides image hosting.
+A full-stack application for managing electrical transformers, inspections, and thermal images with AI-powered anomaly detection and digital maintenance record generation. Built with Next.js, Spring Boot, and PostgreSQL.
 
 ## Contents
 
-- Overview
-- Architecture
-- Implemented features
-- Project structure
-- Setup and running locally
-- Environment variables
-- Database and seeding
-- API endpoints
-- Known limitations and issues
-- Roadmap ideas
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Setup & Installation](#setup--installation)
+- [Environment Variables](#environment-variables)
+- [Database Schema](#database-schema)
+- [API Endpoints](#api-endpoints)
+- [Usage Guide](#usage-guide)
+- [Known Limitations](#known-limitations)
+
+---
 
 ## Overview
 
-This application supports day‑to‑day transformer management: create and update transformer records, record inspections, upload and browse thermal images, and review a dashboard with status and alerts. The UI is built with Next.js, Tailwind CSS, and a component system based on Radix UI.
+This system digitalizes transformer inspection workflows from image capture to maintenance record generation. It combines AI-powered anomaly detection with manual annotation capabilities and role-based access control for secure maintenance record management.
+
+**Tech Stack:** Next.js 15 (TypeScript) + Spring Boot 3.2.0 (Java 17) + PostgreSQL (Supabase) + Cloudinary
+
+---
+
+## Key Features
+
+### Phase 1: Transformer & Image Management
+- **CRUD Operations:** Create, read, update, delete transformer records
+- **Image Upload:** Cloudinary integration with baseline/maintenance tagging
+- **Environmental Tracking:** Categorize images by weather conditions (sunny, cloudy, rainy)
+- **Search & Filter:** Region/type filters with global search
+
+### Phase 2: AI Anomaly Detection
+- **PatchCore Model:** Deep learning-based thermal anomaly detection via HuggingFace API
+- **Fault Classification:** 6 fault types with confidence scoring and severity levels
+- **Visual Feedback:** Color-coded bounding boxes (red=critical, yellow=warning, green=normal)
+- **Uncertain Detection Flagging:** Confidence < 60% marked for manual review
+
+### Phase 3: Interactive Annotation & Feedback
+- **Canvas Editor:** Drag, resize, add, delete bounding boxes
+- **Manual Refinement:** Correct AI predictions and add custom annotations
+- **Metadata Persistence:** Timestamps, user IDs, and action tracking
+- **Feedback Loop:** Export annotations for model improvement
+
+### Phase 4: Digital Maintenance Records
+- **Auto-Generated Forms:** Pre-filled with transformer details, thermal images, and detection data
+- **Role-Based Access Control:** JWT authentication with 4 roles (ADMIN, ENGINEER, INSPECTOR, VIEWER)
+- **Editable Fields:** Electrical readings, recommended actions, transformer status
+- **Record Management:** Save, retrieve, and view historical maintenance records
+- **Authorization:** ENGINEER/ADMIN can create/edit; ADMIN can delete; INSPECTOR/VIEWER read-only
+
+---
 
 ## Architecture
 
-- Front end
-  - Next.js 15, React 18, TypeScript
-  - Tailwind CSS 4, shadcn/ui + Radix primitives
+**Frontend:** Next.js 15 + React 18 + TypeScript + Tailwind CSS  
+**Backend:** Spring Boot 3.2.0 + Java 17 + Spring Security + JWT  
+**Database:** PostgreSQL (Supabase)  
+**Storage:** Cloudinary (images)  
+**AI Detection:** HuggingFace PatchCore API  
+**Authentication:** JWT tokens with role-based authorization (@PreAuthorize annotations)
 
-- Back end
-  - Java 17, Spring Boot 3.2.0
-  - JPA/Hibernate entities for Transformer, Inspection, Image, User
-  - BCrypt hashing for User passwords (server-side)
-  - REST controllers under /api
+### Anomaly Detection Pipeline
+- **PatchCore Model:** Wide ResNet-50 with multi-scale feature extraction
+- **6 Fault Types:** Normal, Loose Joint (Faulty/Potential), Point Overload (Faulty/Potential), Full Wire Overload
+- **Color-Based Classification:** OpenCV analysis of thermal patterns
+- **Confidence Scoring:** Threshold at 60% for uncertain detections
+- **Visual Indicators:** Color-coded bounding boxes (red=critical, yellow=warning, green=normal)
 
-- Database
-  - PostgreSQL (Supabase)
-  - Tables: transformers, inspections, images, users
-  - Seed scripts and an in-app settings panel to preview schema and seed sample data
+---
 
-- Storage
-  - Cloudinary for image uploads
-
-## Anomaly Detection Approach
-
-The system incorporates an intelligent thermal image anomaly detection pipeline to identify faults in transformers:
-
-### Detection Pipeline
-- **PatchCore Model**: Trained on normal thermal images using a Wide ResNet-50 backbone with multi-scale feature extraction (layer2, layer3)
-- **Memory Bank**: Builds a feature memory bank from normal images; detects anomalies as deviations from learned normal patterns
-- **Deployment**: Containerized pipeline deployed to Hugging Face Spaces as a scalable Flask API
-
-### Classification System
-The system uses OpenCV color-based analysis to classify six fault types:
-
-| Fault Type | Detection Criteria | Severity |
-|------------|-------------------|----------|
-| **Normal** | >80% black/blue coverage | Normal |
-| **Loose Joint (Faulty)** | >10% red/orange in center region | Critical |
-| **Loose Joint (Potential)** | >10% yellow in center region | Warning |
-| **Point Overload (Faulty)** | Small red/orange spots (120px - 5% of image) | Critical |
-| **Point Overload (Potential)** | Small yellow spots (1000px - 5% of image) | Warning |
-| **Full Wire Overload** | >70% red/orange/yellow coverage | Warning |
-
-### Confidence Scoring
-- **Threshold**: Detections with confidence < 60% (0.6) are flagged as "uncertain" and recommended for manual verification
-- **Factors**: Coverage percentage, color intensity, size ratio, and label-specific base confidence
-- **Post-Processing**: Non-maximum suppression, overlapping box filtering, and proximity-based merging
-
-### Visual Feedback
-- Color-coded bounding boxes based on severity and confidence:
-  - **Red spectrum**: Critical faults (intensity increases with confidence)
-  - **Yellow/Orange**: Warnings and potential issues
-  - **Green**: Normal conditions
-- High-confidence detections receive corner markers for emphasis
-
-### API Integration
-- Backend service calls external anomaly detection API with thermal image URLs
-- Results stored in `anomaly_detections` table with full metadata (detection coordinates, confidence scores, processing time)
-- Frontend displays annotated images with interactive anomaly viewer showing detection details
-
-## Implemented features
-
-- Authentication
-  - Login and Sign Up UI with SHA-256 hashing on the client (Next.js) before storing in Supabase
-  - Minimal cookie-based session handling in the app
-  - Spring Boot back end provides a separate BCrypt-based auth for its own User table
-
-- Transformers
-  - Create, edit, delete, and list transformers
-  - Filters by region/type and a global search bar on the dashboard
-  - Transformer detail navigation and last inspection metadata
-
-- Inspections
-  - List, create, edit, and delete inspections
-  - Auto-generate inspection numbers when missing
-  - Status tracking (In Progress, Pending, Completed)
-
-- Images
-  - Cloudinary-powered image upload (multipart/form-data)
-  - Image gallery with filters, search, preview modal, and download
-  - Images tagged with type (baseline/maintenance) and environmental conditions (sunny, cloudy, rainy)
-  - Metadata captured: Upload date/time, type, and uploader.
-
-- Settings panel
-  - Displays Transformer database schema and shows current rows
-  - One-click seed for sample transformers from the UI
-
- 
-## Additional features
-
-- SHA‑256–hashed login and signup flow (Next.js API routes + Supabase)
-- Cloudinary integration for image uploads (multipart/form-data)
-- PostgreSQL (Supabase) persistence
-- Transformer filtering by region/type and global search bar
-- Image gallery of uploaded images
-- Transformer Database Schema & Seed Data overview in the settings panel
-
-
-## Project structure
+## Project Structure
 
 ```
-.
-├─ app/                        # Next.js App Router
-│  ├─ api/                     # API routes
-│  │  ├─ auth/                 # Login/Signup/Me/Logout (cookie-based session)
-│  │  ├─ transformers/         # List/create; and [code]/ for get/update/delete
-│  │  ├─ images/               # List and create image metadata
-│  │  └─ upload-image/         # Multipart upload to Cloudinary + DB insert
-│  ├─ gallery/                 # Image gallery UI
-│  ├─ inspections/             # Inspections list + create/edit/delete
-│  ├─ login/                   # Login/Sign up screen
-│  ├─ settings/                # Shows schema + seed data; misc settings
-│  ├─ transformer/             # Transformer detail & edit list
-│  └─ page.tsx                 # Dashboard (stats + transformers)
-├─ backend/                    # Spring Boot service (Java 17, Spring Boot 3.2.0)
-│  ├─ src/main/java/com/transformer/management/
-│  │  ├─ controller/           # Auth, Transformer, Inspection, Image controllers
-│  │  ├─ entity/               # JPA entities
-│  │  ├─ repository/           # Spring Data repositories
-│  │  └─ config/               # Security and CORS config
-│  └─ src/main/resources/application.properties
-├─ components/                 # UI components and layouts
-├─ lib/                        # Front-end libs (supabase, hashing, APIs, seeding)
-├─ public/                     # Static images (demo placeholders)
-├─ scripts/                    # Seeding scripts for Supabase
-├─ styles/                     # Global CSS
-└─ package.json                # Front-end scripts
+Transformer-Management-System/
+├── app/                          # Next.js App Router
+│   ├── api/                      # API routes
+│   │   ├── auth/                 # Login/Signup/Logout
+│   │   ├── transformers/         # Transformer CRUD
+│   │   ├── inspections/          # Inspection management
+│   │   ├── images/               # Image metadata
+│   │   ├── upload-image/         # Cloudinary upload
+│   │   └── maintenance-records/  # Maintenance record CRUD
+│   ├── inspections/              # Inspection pages
+│   ├── gallery/                  # Image gallery
+│   ├── transformer/              # Transformer details & edit
+│   └── page.tsx                  # Dashboard
+├── backend/                      # Spring Boot service
+│   └── src/main/java/com/transformer/management/
+│       ├── controller/           # REST controllers
+│       ├── entity/               # JPA entities
+│       ├── repository/           # Spring Data repositories
+│       └── config/               # Security & CORS
+├── components/                   # React components
+│   ├── forms/                    # Maintenance record form
+│   ├── layout/                   # Header, sidebar
+│   └── ui/                       # Reusable UI components
+├── lib/                          # API clients & utilities
+│   ├── auth-api.ts               # JWT & role checking
+│   ├── backend-api.ts            # Transformer/Inspection APIs
+│   ├── anomaly-api.ts            # AI detection integration
+│   ├── annotation-api.ts         # Annotation CRUD
+│   └── maintenance-record-api.ts # Record management
+└── scripts/                      # Database seed scripts
 ```
 
-## Cloning the repository
+---
 
+## Setup & Installation
+
+### Prerequisites
+- Node.js 18+
+- Java 17
+- Maven 3.6+
+- PostgreSQL (Supabase account)
+- Cloudinary account
+
+### 1. Clone Repository
 ```powershell
 git clone https://github.com/KumuthuDeZoysa/Transformer-Management-System.git
 cd Transformer-Management-System
 ```
 
-## Setup and running locally
-
-Prerequisites
-- Node.js 18+ (Next.js 15)
-- npm
-- Java 17 and Maven (for the back end)
-
-Front end (Next.js)
-1) Install dependencies
-
+### 2. Frontend Setup
 ```powershell
 npm install
-```
-
-2) Create .env.local in the repo root (see Environment variables below), then run the dev server
-
-```powershell
+# Create .env.local (see Environment Variables below)
 npm run dev
 ```
+Frontend runs at: `http://localhost:3000`
 
-App runs at: http://localhost:3000
-
-Back end (Spring Boot)
-1) Configure database connection. Prefer environment variables for production; for local dev, you can update backend/src/main/resources/application.properties or set the corresponding env vars.
-
-2) Start the service
-
+### 3. Backend Setup
 ```powershell
-mvn spring-boot:run
+cd backend
+# Configure application.properties or set environment variables
+mvn clean compile spring-boot:run
+```
+Backend runs at: `http://localhost:8080`
+
+### 4. Database Setup
+- Create PostgreSQL database on Supabase
+- Run migrations from `backend/database/migrations/`
+- Seed test data: `node scripts/seed.mjs`
+
+---
+
+## Environment Variables
+
+### Frontend (.env.local)
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
 ```
 
-By default the server runs on http://localhost:9090 with a context-path of /api.
-
-## Environment variables
-
-
-
-Back end
-
-```
-SPRING_DATASOURCE_URL=jdbc:postgresql://<host>:<port>/<db>
-SPRING_DATASOURCE_USERNAME=<username>
-SPRING_DATASOURCE_PASSWORD=<password>
+### Backend (application.properties or environment variables)
+```properties
+SPRING_DATASOURCE_URL=jdbc:postgresql://<host>:<port>/<database>
+SPRING_DATASOURCE_USERNAME=your_username
+SPRING_DATASOURCE_PASSWORD=your_password
 SERVER_PORT=8080
 SERVER_SERVLET_CONTEXT_PATH=/api
 ```
 
-## Test Data (How to load)
+---
 
-1) Configure `.env.local`:
-   ```
-   SUPABASE_URL=...
-   SUPABASE_SERVICE_ROLE_KEY=...
-   CLOUDINARY_CLOUD_NAME=...
-   CLOUDINARY_API_KEY=...
-   CLOUDINARY_API_SECRET=...
+## Database Schema
 
-2) Install dependencies for the seeder:
-   ```
-   npm i @supabase/supabase-js cloudinary
+### Core Tables
 
-3) Run the seeder:
-
-   ```
-   node scripts/seed.mjs
-
-
-## Screenshots
-
-![Dashboard](images/Screenshots_PowerPulse/Dashboard.png)
-The main dashboard provides KPIs and recent alerts with quick access to core modules.
-
-![Sign up](images/Screenshots_PowerPulse/Signup%20dialog%20box.png)
-Create an account via the signup tab; passwords are SHA‑256 hashed client‑side before storage.
-
-![Signout](images/Screenshots_PowerPulse/Sign%20out.png)
-Sign out clears the session cookie and returns you to the login screen.
-
-![Search transformer by name](images/Screenshots_PowerPulse/Search%20transformer%20by%20name.png)
-Find records quickly using the global search bar; results update instantly as you type.
-
-![Transformer table filtering](images/Screenshots_PowerPulse/Transformer%20table%20filtering.png)
-Filter transformers by region and type to narrow the list for targeted operations.
-
-![Add transformer](images/Screenshots_PowerPulse/Add%20transformer%20dialog%20box.png)
-Add a new transformer with required-field validation and consistent formatting.
-
-![Edit transformer](images/Screenshots_PowerPulse/Edit%20transformer%20dialog%20box.png)
-Update existing transformer details in a focused edit dialog.
-
-![Transformer details page](images/Screenshots_PowerPulse/Transformer%20Details%20Page.png)
-Review a single transformer’s capacity, location, status, and last inspection metadata.
-
-![Image gallery](images/Screenshots_PowerPulse/Image%20Gallery.png)
-Browse uploaded thermal images with type/status filters, previews, and downloads.
-
-![Transformer database schema and seed data](images/Screenshots_PowerPulse/Transformer%20Database%20Schema%20and%20Seed%20Data%20Overview.png)
-The settings panel shows the schema and current rows with a one‑click seed action for demos.
-
-## Database and seeding
-
-The settings panel shows the transformer table shape used by the app:
-
+**users**
 ```sql
-CREATE TABLE transformers (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  code text NOT NULL UNIQUE,
-  pole_no text,
-  region text,
-  type text,
-  capacity text,
-  location text,
-  status text check (status in ('normal','warning','critical')) default 'normal',
-  last_inspection timestamptz,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
+id UUID PRIMARY KEY
+username TEXT UNIQUE NOT NULL
+password TEXT NOT NULL  -- BCrypt hashed
+role TEXT NOT NULL  -- ADMIN, ENGINEER, INSPECTOR, VIEWER
+created_at TIMESTAMP DEFAULT NOW()
 ```
 
-Related tables:
+**transformers**
+```sql
+id UUID PRIMARY KEY
+code TEXT UNIQUE NOT NULL
+pole_no TEXT
+region TEXT
+type TEXT
+capacity TEXT
+location TEXT
+status TEXT CHECK (status IN ('normal','warning','critical'))
+last_inspection TIMESTAMP
+created_at TIMESTAMP DEFAULT NOW()
+updated_at TIMESTAMP DEFAULT NOW()
+```
 
-- images: id uuid primary key, transformer_id (uuid references transformers), url text, label text, captured_at timestamptz, created_at timestamptz
-- inspections: id uuid primary key, transformer_id (uuid references transformers), inspection_no text, inspected_at timestamptz, maintenance_date timestamptz, status text, notes text, created_at timestamptz, updated_at timestamptz
-- users: id, username unique, password (sha256 hex), role text
+**inspections**
+```sql
+id UUID PRIMARY KEY
+transformer_id UUID REFERENCES transformers(id)
+inspection_no TEXT
+inspected_at TIMESTAMP
+status TEXT  -- Pending, In Progress, Completed
+notes TEXT
+created_at TIMESTAMP DEFAULT NOW()
+updated_at TIMESTAMP DEFAULT NOW()
+```
 
-**Seed data:**
+**images**
+```sql
+id UUID PRIMARY KEY
+transformer_id UUID REFERENCES transformers(id)
+inspection_id UUID REFERENCES inspections(id)
+url TEXT NOT NULL  -- Cloudinary URL
+type TEXT  -- baseline, maintenance
+environmental_condition TEXT  -- sunny, cloudy, rainy
+uploader TEXT
+created_at TIMESTAMP DEFAULT NOW()
+```
 
-- Provided via scripts and one-click seeding in the settings panel
-- Includes at least 5 sample transformers with baseline images
+**anomaly_detections**
+```sql
+id UUID PRIMARY KEY
+inspection_id UUID REFERENCES inspections(id)
+transformer_id UUID REFERENCES transformers(id)
+total_detections INTEGER
+critical_count INTEGER
+warning_count INTEGER
+uncertain_count INTEGER
+overlay_image_url TEXT  -- Annotated image URL
+detected_at TIMESTAMP DEFAULT NOW()
+```
 
+**annotations**
+```sql
+id UUID PRIMARY KEY
+anomaly_detection_id UUID REFERENCES anomaly_detections(id)
+bbox_x INTEGER
+bbox_y INTEGER
+bbox_width INTEGER
+bbox_height INTEGER
+label TEXT
+confidence DECIMAL
+severity TEXT  -- critical, warning, normal
+user_id UUID REFERENCES users(id)
+action TEXT  -- added, edited, deleted
+notes TEXT
+created_at TIMESTAMP DEFAULT NOW()
+```
 
-## API endpoints
+**maintenance_records**
+```sql
+id UUID PRIMARY KEY
+inspection_id UUID REFERENCES inspections(id)
+transformer_id UUID REFERENCES transformers(id)
+inspector_name TEXT
+transformer_status TEXT  -- OK, Needs Maintenance, Urgent Attention
+voltage TEXT
+current TEXT
+power_factor TEXT
+oil_temperature TEXT
+winding_temperature TEXT
+recommended_action TEXT
+additional_remarks TEXT
+created_by UUID REFERENCES users(id)
+created_at TIMESTAMP DEFAULT NOW()
+updated_at TIMESTAMP DEFAULT NOW()
+```
 
-- Auth
-  - POST /api/auth/login — username/password; stores app_session cookie (client-side SHA-256 hashing before DB check)
-  - POST /api/auth/signup — create a user; sets cookie
-  - GET /api/auth/me — return current user from cookie
-  - POST /api/auth/logout — clear cookie
-- Transformers
-  - GET /api/transformers?limit=&offset=&q= — list with pagination and optional search by code
-  - POST /api/transformers — create
-  - GET /api/transformers/[code] — fetch by code or UUID
-  - PATCH /api/transformers/[code] — partial update (admin client if service role provided)
-  - DELETE /api/transformers/[code] — delete by code or UUID
-- Images
-  - GET /api/images?transformer_id= — list images; optional transformer filter
-  - POST /api/images — insert image metadata
-  - POST /api/upload-image — multipart/form-data; uploads to Cloudinary, then inserts metadata
+---
 
+## API Endpoints
 
-These services use JPA entities mapped to PostgreSQL.
+### Authentication
+- `POST /api/auth/login` - Login with username/password, returns JWT token
+- `POST /api/auth/signup` - Register new user (defaults to VIEWER role)
+- `GET /api/auth/me` - Get current user info from JWT
+- `POST /api/auth/logout` - Invalidate session
 
-## Known limitations and issues
+### Transformers
+- `GET /api/transformers` - List all transformers (pagination, search)
+- `POST /api/transformers` - Create transformer
+- `GET /api/transformers/{id}` - Get transformer by ID
+- `PUT /api/transformers/{id}` - Update transformer
+- `DELETE /api/transformers/{id}` - Delete transformer
+
+### Inspections
+- `GET /api/inspections` - List all inspections (sorted by date descending)
+- `POST /api/inspections` - Create inspection
+- `GET /api/inspections/{id}` - Get inspection details
+- `PUT /api/inspections/{id}` - Update inspection
+- `DELETE /api/inspections/{id}` - Delete inspection
+
+### Images
+- `GET /api/images` - List images (filter by transformer_id)
+- `POST /api/images` - Create image metadata
+- `POST /api/upload-image` - Upload image to Cloudinary (multipart/form-data)
+
+### Anomaly Detection
+- `POST /api/anomaly/detect` - Trigger AI detection on images
+- `GET /api/anomaly/{inspectionId}` - Get detection results
+
+### Annotations
+- `GET /api/annotations/{detectionId}` - List annotations for detection
+- `POST /api/annotations` - Create annotation
+- `PUT /api/annotations/{id}` - Update annotation
+- `DELETE /api/annotations/{id}` - Delete annotation
+
+### Maintenance Records (Role-Based)
+- `GET /api/maintenance-records` - List all records (all authenticated users)
+- `POST /api/maintenance-records` - Create record (**ENGINEER/ADMIN only**)
+- `GET /api/maintenance-records/{id}` - Get record details (all authenticated users)
+- `PUT /api/maintenance-records/{id}` - Update record (**ENGINEER/ADMIN only**)
+- `DELETE /api/maintenance-records/{id}` - Delete record (**ADMIN only**)
+
+**Authorization:** All endpoints require JWT token in `Authorization: Bearer <token>` header. Role-based endpoints enforce permissions via `@PreAuthorize` annotations.
+
+---
+
+## Usage Guide
+
+### 1. Login & Authentication
+- Access the system at `http://localhost:3000`
+- Login with credentials (default test users: admin/engineer/viewer)
+- JWT token stored and sent with all API requests
+- User role displayed in header badge (upper right corner)
+
+### 2. Transformer Management
+- Navigate to Dashboard to view all transformers
+- Use filters (region/type) and search bar to find transformers
+- Create/Edit/Delete transformers via dialog forms
+
+### 3. Inspection Workflow
+- Select a transformer → Create inspection
+- Upload baseline image (with environmental condition: sunny/cloudy/rainy)
+- Upload maintenance image for comparison
+- Click "Analyze Images" to trigger AI anomaly detection
+
+### 4. Anomaly Detection & Annotation
+- View side-by-side image comparison with AI-detected anomalies
+- Bounding boxes color-coded by severity (red=critical, yellow=warning)
+- Open Canvas Editor to manually refine detections:
+  - Drag boxes to reposition
+  - Resize using corner handles
+  - Add new boxes or delete false positives
+  - Add notes to annotations
+- Click "Save Changes" to persist edits
+
+### 5. Maintenance Record Generation
+- After analysis, click "Generate Record" button
+- System auto-populates:
+  - Transformer metadata (code, location, capacity)
+  - Inspection details (date, inspector)
+  - Annotated thermal image (with your edits)
+  - Detection summary table (anomaly counts, confidence scores)
+- **If role = ENGINEER or ADMIN:**
+  - Fill in editable fields (electrical readings, status, recommended actions)
+  - Click "Save Record" to store in database
+- **If role = INSPECTOR or VIEWER:**
+  - Read-only access with warning banner
+  - All fields disabled, save button locked
+
+### 6. Record Retrieval
+- Navigate to Maintenance Records page
+- View all saved records with filters
+- Click on a record to view full details
+- Export or print records as needed
+
+---
+
+## Known Limitations
 
 - No database backup configured
   - There is currently no automated backup/restore strategy for the PostgreSQL database.
-- Reporting not implemented
-  - Report generation/export is not yet available.
 - Authentication not using a managed provider
   - The login interface does not integrate a managed identity provider (e.g., Auth0). Adding one would strengthen security and enterprise features, but may incur additional cost.
+- No cache database (e.g., Redis)  
+  - The system does not use a cache layer for quick retrieval of frequently accessed data. Adding Redis or similar would improve performance for large-scale deployments.
+
+---
+
+## License
+
+This project is developed as part of the EN3350 Software Design Competition at the University of Moratuwa.
+
+---
+
+## Contributors
+
+- Team: Pebble
+- Department of Electronic & Telecommunication Engineering
+- University of Moratuwa
