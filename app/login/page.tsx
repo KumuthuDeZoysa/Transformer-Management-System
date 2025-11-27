@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { authApi } from '@/lib/auth-api'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -17,23 +18,25 @@ export default function LoginPage() {
   const [error, setError] = useState<string|undefined>()
 
   useEffect(() => {
-    // If already logged in, optional redirect by checking /api/auth/me
-    fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.json()).then(j => {
-      if (j?.user) router.replace('/')
-    }).catch(() => {})
-  }, [])
+    // If already logged in, redirect to home
+    if (authApi.isAuthenticated()) {
+      router.replace('/')
+    }
+  }, [router])
 
   const submit = async () => {
     setLoading(true)
     setError(undefined)
     try {
-      const url = tab === 'login' ? '/api/auth/login' : '/api/auth/signup'
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || 'Failed')
-      router.replace('/')
+      if (tab === 'login') {
+        await authApi.login({ username, password })
+      } else {
+        await authApi.signup({ username, password })
+      }
+      // Force a full page reload to ensure all components pick up the new auth state
+      window.location.href = '/'
     } catch (e: any) {
-      setError(e.message || 'Failed')
+      setError(e.message || 'Authentication failed')
     } finally {
       setLoading(false)
     }

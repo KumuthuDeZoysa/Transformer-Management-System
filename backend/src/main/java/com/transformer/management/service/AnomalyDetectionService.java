@@ -324,4 +324,45 @@ public class AnomalyDetectionService {
     public Map<String, Map<String, Object>> getEnginesMetadata() {
         return engineFactory.getAllEnginesMetadata();
     }
+
+    /**
+     * Update anomaly detection counts after manual annotation edits
+     * 
+     * @param inspectionId The inspection ID to find the anomaly detection for
+     * @param totalDetections Updated total count of detections
+     * @param criticalCount Updated count of critical anomalies
+     * @param warningCount Updated count of warning anomalies
+     * @return The updated AnomalyDetection entity or null if not found
+     */
+    @Transactional
+    public AnomalyDetection updateAnomalyCounts(UUID inspectionId, Integer totalDetections, 
+                                                Integer criticalCount, Integer warningCount) {
+        logger.info("Updating anomaly counts for inspection: {}", inspectionId);
+        
+        // Find the most recent anomaly detection for this inspection
+        List<AnomalyDetection> detections = anomalyDetectionRepository.findByInspectionId(inspectionId);
+        
+        if (detections.isEmpty()) {
+            logger.warn("No anomaly detection found for inspection: {}", inspectionId);
+            return null;
+        }
+        
+        // Get the most recent detection (assuming sorted by detectedAt desc)
+        AnomalyDetection detection = detections.get(0);
+        
+        // Update counts
+        detection.setTotalDetections(totalDetections);
+        detection.setCriticalCount(criticalCount);
+        detection.setWarningCount(warningCount);
+        
+        // Recalculate uncertain count (optional - can be done separately)
+        Integer uncertainCount = totalDetections - criticalCount - warningCount;
+        if (uncertainCount < 0) uncertainCount = 0;
+        detection.setUncertainCount(uncertainCount);
+        
+        logger.info("Updated counts - Total: {}, Critical: {}, Warning: {}", 
+                   totalDetections, criticalCount, warningCount);
+        
+        return anomalyDetectionRepository.save(detection);
+    }
 }

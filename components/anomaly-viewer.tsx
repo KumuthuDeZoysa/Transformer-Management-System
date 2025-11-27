@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { detectAnomalies, type AnomalyDetectionResponse } from "@/lib/anomaly-api"
+import { detectAnomalies, updateAnomalyCounts, type AnomalyDetectionResponse } from "@/lib/anomaly-api"
 import { saveAnnotationsRealtime, getInspectionAnnotations } from "@/lib/annotation-api"
 import { useFeedbackLog } from "@/hooks/use-feedback-log"
+import { authApi } from "@/lib/auth-api"
 import type { ModelPredictions, FinalAnnotations, DetectionAnnotation } from "@/lib/types"
 import { CanvasAnnotationEditor } from "@/components/canvas-annotation-editor"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,7 +18,10 @@ interface AnomalyViewerProps {
   maintenanceUrl: string
   inspectionId?: string
   transformerId?: string
-  onAnalysisComplete?: () => void
+  onAnalysisComplete?: (overlayImageUrl?: string) => void
+  onLoadPreviousComplete?: () => void // Callback when previous annotations are loaded
+  onAnnotationsSaved?: (annotatedImageDataUrl: string) => void // Callback with canvas image when annotations are saved
+  onBoxesUpdated?: (boxes: any[]) => void // Callback when boxes are updated (for maintenance record)
 }
 
 // Image controls state for zoom and pan
@@ -30,7 +34,7 @@ interface ImageControls {
   dragStartY: number
 }
 
-export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, transformerId, onAnalysisComplete }: AnomalyViewerProps) {
+export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, transformerId, onAnalysisComplete, onLoadPreviousComplete, onAnnotationsSaved, onBoxesUpdated }: AnomalyViewerProps) {
   // Log props on mount
   useEffect(() => {
     console.log('🎯 [AnomalyViewer Mount] Props received:', {
@@ -76,10 +80,12 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
   
   // Fetch current user on component mount
   useEffect(() => {
-    fetch('/api/auth/me', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(j => setCurrentUser(j?.user || null))
-      .catch(() => setCurrentUser(null))
+    if (authApi.isAuthenticated()) {
+      const user = authApi.getCurrentUserLocal();
+      setCurrentUser(user);
+    } else {
+      setCurrentUser(null);
+    }
   }, [])
   
   // Zoom and pan controls for baseline image
@@ -104,6 +110,7 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
   
   const baselineImageRef = useRef<HTMLDivElement>(null)
   const maintenanceImageRef = useRef<HTMLDivElement>(null)
+  const exportCanvasRef = useRef<(() => string | null) | null>(null) // Function to export canvas as data URL
 
   // Handle manual save button click
   const handleSaveChanges = async () => {
@@ -166,7 +173,31 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
         setCurrentBoxes(updatedBoxes)
         setHasUnsavedChanges(false)
         
-        // Step 2: Log feedback for model improvement (new functionality)
+        // Notify parent of updated boxes for maintenance record
+        if (onBoxesUpdated) {
+          onBoxesUpdated(updatedBoxes)
+        }
+        
+        // Step 2: Update anomaly detection counts in database
+        if (inspectionId) {
+          console.log('📊 [Manual Save] Calculating updated anomaly counts...')
+          
+          const totalDetections = updatedBoxes.length
+          const criticalCount = updatedBoxes.filter(b => 
+            b.severity === 'critical' || b.label.toLowerCase().includes('critical')
+          ).length
+          const warningCount = updatedBoxes.filter(b => 
+            b.severity === 'warning' || b.label.toLowerCase().includes('warning')
+          ).length
+          
+          console.log(`  - Total: ${totalDetections}, Critical: ${criticalCount}, Warning: ${warningCount}`)
+          
+          // Update the anomaly detection record
+          await updateAnomalyCounts(inspectionId, totalDetections, criticalCount, warningCount)
+          console.log('✅ [Manual Save] Anomaly counts updated in database')
+        }
+        
+        // Step 3: Log feedback for model improvement (new functionality)
         if (initialModelPredictions && initialModelPredictions.detections.length > 0) {
           console.log('📊 [Feedback] Logging feedback for model improvement...')
           
@@ -229,6 +260,22 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
           console.log('✅ [Feedback] Feedback logged successfully')
         } else {
           console.log('ℹ️ [Feedback] Skipping feedback logging (no initial AI predictions)')
+        }
+        
+        // Step 4: Export canvas as image and notify parent
+        if (onAnnotationsSaved && exportCanvasRef.current) {
+          console.log('📸 [Manual Save] Exporting canvas as annotated image...')
+          try {
+            const dataUrl = exportCanvasRef.current()
+            if (dataUrl) {
+              console.log('✅ [Manual Save] Canvas exported successfully, notifying parent')
+              onAnnotationsSaved(dataUrl)
+            } else {
+              console.warn('⚠️ [Manual Save] Canvas export returned null')
+            }
+          } catch (error) {
+            console.error('❌ [Manual Save] Failed to export canvas:', error)
+          }
         }
         
         // Show success message briefly
@@ -339,12 +386,18 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
           setCurrentBoxes(aiBoxes)
           setHasUnsavedChanges(true) // Mark as having unsaved changes
           console.log('✅ [AI Detections] Loaded', aiBoxes.length, 'AI detections (not saved yet - click Save Changes)')
+          
+          // Notify parent of updated boxes for maintenance record
+          if (onBoxesUpdated) {
+            onBoxesUpdated(aiBoxes)
+          }
         }
         
-        // Notify parent component that analysis is complete
+        // Notify parent component that analysis is complete and pass overlay image URL
         if (onAnalysisComplete) {
           console.log("🔄 [Anomaly Viewer] Notifying parent of analysis completion")
-          onAnalysisComplete()
+          console.log("🖼️ [Anomaly Viewer] Passing overlayImage URL to parent:", result.overlayImage)
+          onAnalysisComplete(result.overlayImage)
         }
       } else {
         setError("Failed to detect anomalies. Please try again.")
@@ -443,8 +496,38 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
         setCurrentBoxes(activeBoxes)
         setDeletedBoxes(deletedBoxes)
         setHasLoadedPrevious(true)
-        setHasAnalyzed(true)
+        setHasAnalyzed(true) // Mark as analyzed so UI shows completion
         setHasUnsavedChanges(false)
+        
+        // Notify parent of loaded boxes for maintenance record
+        if (onBoxesUpdated) {
+          onBoxesUpdated(activeBoxes)
+        }
+        
+        // Export canvas as image after loading previous annotations
+        // Use setTimeout to ensure canvas has rendered with loaded boxes
+        setTimeout(() => {
+          if (onAnnotationsSaved && exportCanvasRef.current) {
+            console.log('📸 [Load Previous] Exporting canvas with loaded annotations...')
+            try {
+              const dataUrl = exportCanvasRef.current()
+              if (dataUrl) {
+                console.log('✅ [Load Previous] Canvas exported successfully, notifying parent')
+                onAnnotationsSaved(dataUrl)
+              } else {
+                console.warn('⚠️ [Load Previous] Canvas export returned null')
+              }
+            } catch (error) {
+              console.error('❌ [Load Previous] Failed to export canvas:', error)
+            }
+          }
+        }, 500) // Wait 500ms for canvas to render
+        
+        // Notify parent that previous annotations have been loaded
+        if (onLoadPreviousComplete) {
+          console.log('🔄 [Load Previous] Notifying parent that annotations are loaded')
+          onLoadPreviousComplete()
+        }
         
         // Create a synthetic anomalyData object so the canvas displays the loaded boxes
         // Include ALL boxes (active + deleted) so they can be properly displayed
@@ -937,6 +1020,10 @@ export function AnomalyViewer({ baselineUrl, maintenanceUrl, inspectionId, trans
                     compact={true}
                     selectedBoxIndex={selectedBoxIndex}
                     externalNoteUpdate={lastNoteUpdate}
+                    onExportCanvas={(exportFn) => {
+                      // Store the export function from CanvasAnnotationEditor
+                      exportCanvasRef.current = exportFn
+                    }}
                     onBoxesChange={(boxes, deleted) => {
                       // Update current boxes and deleted boxes in real-time
                       console.log('📝 [Boxes Changed]', {

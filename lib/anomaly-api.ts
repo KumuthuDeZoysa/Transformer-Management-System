@@ -1,5 +1,7 @@
 // Anomaly Detection API client for calling backend anomaly detection service
 
+import { tokenManager } from './jwt-token'
+
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'
 
 export interface AnomalyDetectionRequest {
@@ -44,6 +46,7 @@ export async function detectAnomalies(imageUrl: string, inspectionId?: string): 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
       body: JSON.stringify({ imageUrl, inspectionId }),
     })
@@ -78,6 +81,7 @@ export async function checkAnomalyApiHealth(): Promise<any | null> {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
     })
 
@@ -95,6 +99,49 @@ export async function checkAnomalyApiHealth(): Promise<any | null> {
 }
 
 /**
+ * Update anomaly detection counts after manual annotation edits
+ * 
+ * @param inspectionId - The inspection ID to update counts for
+ * @param totalDetections - Updated total count
+ * @param criticalCount - Updated critical count
+ * @param warningCount - Updated warning count
+ * @returns Promise with the update result or null on error
+ */
+export async function updateAnomalyCounts(
+  inspectionId: string,
+  totalDetections: number,
+  criticalCount: number,
+  warningCount: number
+): Promise<any | null> {
+  try {
+    console.log('🔄 [Anomaly API] Updating anomaly counts for inspection:', inspectionId)
+    console.log('  - Total:', totalDetections, '| Critical:', criticalCount, '| Warning:', warningCount)
+    
+    const response = await fetch(`${BACKEND_BASE_URL}/anomalies/update-counts/${inspectionId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
+      },
+      body: JSON.stringify({ totalDetections, criticalCount, warningCount }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error('❌ [Anomaly API] Failed to update counts:', response.status, errorData)
+      throw new Error(errorData.message || `Failed to update anomaly counts: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    console.log('✅ [Anomaly API] Successfully updated anomaly counts:', data)
+    return data
+  } catch (error) {
+    console.error('Error updating anomaly counts:', error)
+    return null
+  }
+}
+
+/**
  * Anomaly detection API operations
  */
 export const anomalyApi = {
@@ -107,6 +154,11 @@ export const anomalyApi = {
    * Check health status of the anomaly detection service
    */
   checkHealth: checkAnomalyApiHealth,
+
+  /**
+   * Update anomaly counts after manual edits
+   */
+  updateCounts: updateAnomalyCounts,
 }
 
 // Export as default

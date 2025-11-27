@@ -10,12 +10,16 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Upload, ImageIcon, CheckCircle, Clock, Eye } from 'lucide-react'
+import { ArrowLeft, Upload, ImageIcon, CheckCircle, Clock, Eye, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { fetchInspections, updateInspection, type DbInspection } from '@/lib/inspections-api'
-import backendApi, { type BackendTransformer, type BackendInspection } from '@/lib/backend-api'
+import backendApi, { type BackendTransformer, type BackendInspection, imageApi, uploadApi } from '@/lib/backend-api'
 import { transformerApi } from '@/lib/mock-api'
 import { AnomalyViewer } from '@/components/anomaly-viewer'
+import { maintenanceRecordApi } from '@/lib/maintenance-record-api'
+import { MaintenanceRecordForm } from '@/components/forms/maintenance-record-form'
+import { MaintenanceRecord } from '@/lib/types'
+import { tokenManager } from '@/lib/jwt-token'
 
 // Helper function to construct full image URL from backend
 const getImageUrl = (url: string): string => {
@@ -68,6 +72,18 @@ export default function InspectionDetailPage() {
   // Anomaly detection states
   const [showAnomalyAnalysis, setShowAnomalyAnalysis] = useState(false)
   const [hasCompletedAIAnalysis, setHasCompletedAIAnalysis] = useState(false)
+  const [currentDetections, setCurrentDetections] = useState<any[]>([]) // Store current bounding boxes for report
+
+  // Maintenance record states
+  const [maintenanceRecord, setMaintenanceRecord] = useState<MaintenanceRecord | null>(null)
+  const [showMaintenanceRecord, setShowMaintenanceRecord] = useState(false)
+  const [anomalySummary, setAnomalySummary] = useState<{
+    totalAnomalies: number
+    criticalCount: number
+    warningCount: number
+    uncertainCount: number
+  } | null>(null)
+  const [annotatedImageUrl, setAnnotatedImageUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const loadInspection = async () => {
@@ -93,6 +109,19 @@ export default function InspectionDetailPage() {
         }
         
         setInspection(currentInspection)
+        
+        // Load maintenance record if it exists
+        if (healthCheck.status === 'healthy') {
+          try {
+            const record = await maintenanceRecordApi.getByInspectionId(inspectionId)
+            if (record) {
+              setMaintenanceRecord(record)
+              console.log('📋 [Maintenance Record] Found existing record:', record.id)
+            }
+          } catch (error) {
+            console.log('📋 [Maintenance Record] No existing record found')
+          }
+        }
         
         // Get transformer data using backend API if available
         if (healthCheck.status === 'healthy') {
@@ -174,32 +203,28 @@ export default function InspectionDetailPage() {
           
           console.log('✅ [Image Loading] Complete - Baseline:', baselineImage ? '1' : '0', ', Maintenance:', maintenanceOnly.length)
         } else {
-          // Fallback to Next.js API if backend is not available
-          console.warn('⚠️ Backend not available, using Next.js API fallback')
+          // Fallback to backend API with JWT if inspection not found
+          console.warn('⚠️ Inspection not found in backend, trying to load images directly')
           try {
-            const imagesResponse = await fetch(`/api/images?transformer_id=${currentInspection.transformer_id}`)
-            if (imagesResponse.ok) {
-              const imagesData = await imagesResponse.json()
-              const allImages = imagesData.items || []
-              
-              // Separate baseline and maintenance images using label-based logic
-              const baseline = allImages.filter((img: any) => 
-                img.label && img.label.includes('[baseline]')
-              )
-              const maintenance = allImages.filter((img: any) => 
-                img.label && (
-                  img.label.includes('[maintenance]') && (
-                    img.label.includes(inspectionId) ||
-                    img.label.includes(currentInspection.inspection_no || '')
-                  )
+            const allImages = await imageApi.getByTransformerId(currentInspection.transformer_id)
+            
+            // Separate baseline and maintenance images using label-based logic
+            const baseline = allImages.filter((img: any) => 
+              img.label && img.label.includes('[baseline]')
+            )
+            const maintenance = allImages.filter((img: any) => 
+              img.label && (
+                img.label.includes('[maintenance]') && (
+                  img.label.includes(inspectionId) ||
+                  img.label.includes(currentInspection.inspection_no || '')
                 )
               )
-              
-              setBaselineImages(baseline)
-              setMaintenanceImages(maintenance)
-            }
+            )
+            
+            setBaselineImages(baseline)
+            setMaintenanceImages(maintenance)
           } catch (error) {
-            console.error('❌ Failed to load images from Next.js API:', error)
+            console.error('❌ Failed to load images from backend API:', error)
             setBaselineImages([])
             setMaintenanceImages([])
           }
@@ -257,35 +282,31 @@ export default function InspectionDetailPage() {
       
       console.log('✅ [Refresh] Complete - Baseline:', baselineImage ? '1' : '0', ', Maintenance:', maintenanceOnly.length)
     } else {
-      // Fallback to Next.js API
-      console.warn('⚠️ Backend not available during refresh, using Next.js API')
+      // Fallback to backend API with JWT
+      console.warn('⚠️ Inspection not found in backend during refresh, loading images directly')
       try {
-        const imagesResponse = await fetch(`/api/images?transformer_id=${inspection.transformer_id}`)
-        if (imagesResponse.ok) {
-          const imagesData = await imagesResponse.json()
-          const allImages = imagesData.items || []
-          
-          // Separate baseline and maintenance images using label-based logic
-          const baseline = allImages
-            .filter((img: any) => img.label && img.label.includes('[baseline]'))
-            .sort((a: any, b: any) => new Date(b.capturedAt || b.uploadedAt || 0).getTime() - new Date(a.capturedAt || a.uploadedAt || 0).getTime())
-          
-          const maintenance = allImages.filter((img: any) => 
-            img.label && (
-              img.label.includes('[maintenance]') && (
-                img.label.includes(inspectionId) ||
-                !img.label.match(/\[inspection:([a-f0-9-]+)\]/) ||
-                img.label.match(/\[inspection:([a-f0-9-]+)\]/)?.[1] === inspectionId
-              )
+        const allImages = await imageApi.getByTransformerId(inspection.transformer_id)
+        
+        // Separate baseline and maintenance images using label-based logic
+        const baseline = allImages
+          .filter((img: any) => img.label && img.label.includes('[baseline]'))
+          .sort((a: any, b: any) => new Date(b.capturedAt || b.uploadedAt || 0).getTime() - new Date(a.capturedAt || a.uploadedAt || 0).getTime())
+        
+        const maintenance = allImages.filter((img: any) => 
+          img.label && (
+            img.label.includes('[maintenance]') && (
+              img.label.includes(inspectionId) ||
+              !img.label.match(/\[inspection:([a-f0-9-]+)\]/) ||
+              img.label.match(/\[inspection:([a-f0-9-]+)\]/)?.[1] === inspectionId
             )
           )
-          
-          setBaselineImages(baseline.slice(0, 1))
-          setMaintenanceImages(maintenance)
-          console.log('✅ [Refresh] Complete (Next.js API) - Baseline:', baseline.length > 0 ? '1' : '0', ', Maintenance:', maintenance.length)
-        }
+        )
+        
+        setBaselineImages(baseline.slice(0, 1))
+        setMaintenanceImages(maintenance)
+        console.log('✅ [Refresh] Complete (Backend API) - Baseline:', baseline.length > 0 ? '1' : '0', ', Maintenance:', maintenance.length)
       } catch (error) {
-        console.error('❌ Failed to refresh images via Next.js API:', error)
+        console.error('❌ Failed to refresh images via backend API:', error)
       }
     }
   }
@@ -376,12 +397,19 @@ export default function InspectionDetailPage() {
         }
         form.append('label', structuredLabel);
 
-        const resp = await fetch('/api/upload-image', {
-          method: 'POST',
-          body: form,
-        })
-        uploadResult = await resp.json().catch(() => null)
-        if (!resp.ok) throw new Error((uploadResult && uploadResult.error) || 'Upload failed')
+        // Use backend API uploadImageToBackend with JWT authentication
+        if (!inspection) throw new Error('Inspection not found')
+        
+        uploadResult = await uploadApi.uploadImageToBackend(
+          selectedFile,
+          inspection.transformer_id,
+          imageType as 'baseline' | 'maintenance',
+          uploaderName,
+          environmentalCondition as 'sunny' | 'cloudy' | 'rainy' | undefined,
+          comments || undefined,
+          inspectionId
+        )
+        if (!uploadResult) throw new Error('Upload failed')
       }
 
       const newUpload: ImageUpload = {
@@ -973,7 +1001,117 @@ export default function InspectionDetailPage() {
                   maintenanceUrl={getImageUrl(maintenanceImages[maintenanceImages.length - 1].url)}
                   inspectionId={inspectionId}
                   transformerId={inspection?.transformer_id}
-                  onAnalysisComplete={refreshInspectionStatus}
+                  onAnnotationsSaved={(annotatedImageDataUrl) => {
+                    // When user saves edited annotations, update the annotated image
+                    console.log('📸 [Annotations Saved] Received new annotated image from canvas')
+                    console.log('📸 [Annotations Saved] Data URL length:', annotatedImageDataUrl?.length || 0)
+                    console.log('📸 [Annotations Saved] Data URL preview:', annotatedImageDataUrl?.substring(0, 100))
+                    setAnnotatedImageUrl(annotatedImageDataUrl)
+                    console.log('📸 [Annotations Saved] Updated annotatedImageUrl state')
+                  }}
+                  onBoxesUpdated={(boxes) => {
+                    // Store the current boxes for the maintenance record
+                    console.log('📦 [Boxes Updated] Received', boxes.length, 'detections')
+                    setCurrentDetections(boxes)
+                  }}
+                  onAnalysisComplete={async (overlayImageUrl) => {
+                    await refreshInspectionStatus()
+                    setHasCompletedAIAnalysis(true)
+                    
+                    // Set annotated overlay image URL directly from detection response
+                    if (overlayImageUrl) {
+                      console.log('✅ [Annotated Image] Received overlay image URL from detection:', overlayImageUrl)
+                      setAnnotatedImageUrl(overlayImageUrl)
+                    } else {
+                      console.warn('⚠️ [Annotated Image] No overlay image URL received from detection')
+                    }
+                    
+                    // Fetch anomaly detection results to populate summary
+                    if (backendConnected) {
+                      try {
+                        // Fetch the latest anomaly detection for this inspection
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'}/anomalies/history/inspection/${inspectionId}`, {
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...tokenManager.getAuthHeader(),
+                          },
+                        })
+                        if (response.ok) {
+                          const detections = await response.json()
+                          console.log('📡 [API Response] Received detections for summary:', detections.length)
+                          
+                          // Get the most recent detection
+                          const currentDetection = detections.length > 0 
+                            ? detections.sort((a: any, b: any) => 
+                                new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime()
+                              )[0]
+                            : null
+                          
+                          if (currentDetection) {
+                            console.log('📊 [Detection Summary] Setting anomaly counts')
+                            
+                            // Set anomaly summary
+                            setAnomalySummary({
+                              totalAnomalies: currentDetection.totalDetections || 0,
+                              criticalCount: currentDetection.criticalCount || 0,
+                              warningCount: currentDetection.warningCount || 0,
+                              uncertainCount: currentDetection.uncertainCount || 0,
+                            })
+                            
+                            // Use overlay URL from database as backup if not already set
+                            if (!overlayImageUrl && currentDetection.overlayImageUrl) {
+                              console.log('📊 [Annotated Image] Using overlay URL from database as fallback:', currentDetection.overlayImageUrl)
+                              setAnnotatedImageUrl(currentDetection.overlayImageUrl)
+                            }
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Failed to fetch anomaly summary:', error)
+                      }
+                    }
+                  }}
+                  onLoadPreviousComplete={async () => {
+                    // When user loads previously saved annotations
+                    console.log('📝 [Load Previous] User loaded saved annotations - marking analysis as complete')
+                    setHasCompletedAIAnalysis(true)
+                    
+                    // Fetch the overlay image from the most recent detection
+                    if (backendConnected) {
+                      try {
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'}/anomalies/history/inspection/${inspectionId}`, {
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...tokenManager.getAuthHeader(),
+                          },
+                        })
+                        if (response.ok) {
+                          const detections = await response.json()
+                          const currentDetection = detections.length > 0 
+                            ? detections.sort((a: any, b: any) => 
+                                new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime()
+                              )[0]
+                            : null
+                          
+                          if (currentDetection) {
+                            console.log('📊 [Load Previous] Setting summary from database')
+                            setAnomalySummary({
+                              totalAnomalies: currentDetection.totalDetections || 0,
+                              criticalCount: currentDetection.criticalCount || 0,
+                              warningCount: currentDetection.warningCount || 0,
+                              uncertainCount: currentDetection.uncertainCount || 0,
+                            })
+                            
+                            if (currentDetection.overlayImageUrl) {
+                              console.log('📊 [Load Previous] Using overlay image from database:', currentDetection.overlayImageUrl)
+                              setAnnotatedImageUrl(currentDetection.overlayImageUrl)
+                            }
+                          }
+                        }
+                      } catch (error) {
+                        console.error('[Load Previous] Failed to fetch detection data:', error)
+                      }
+                    }
+                  }}
                 />
               </CardContent>
             )}
@@ -1091,6 +1229,67 @@ export default function InspectionDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Phase 4: Maintenance Record Section */}
+        {hasCompletedAIAnalysis && (
+          <Card className="col-span-full">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="font-sans">Maintenance Record Sheet</CardTitle>
+                  <CardDescription className="font-serif">
+                    Generate and fill maintenance record form for this inspection
+                  </CardDescription>
+                </div>
+                {!showMaintenanceRecord && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => setShowMaintenanceRecord(true)}
+                    className="cursor-pointer hover:bg-primary/90 transition-colors"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    {maintenanceRecord ? 'View Record' : 'Generate Record'}
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            {showMaintenanceRecord && (
+              <CardContent>
+                <MaintenanceRecordForm
+                  inspectionId={inspectionId}
+                  transformerCode={transformer?.code || 'Unknown'}
+                  transformerType={transformer?.type || undefined}
+                  transformerCapacity={transformer?.capacity || undefined}
+                  transformerRegion={transformer?.region || undefined}
+                  transformerLocation={transformer?.location || undefined}
+                  inspectionNo={inspection?.inspection_no || undefined}
+                  inspectedAt={inspection?.inspected_at}
+                  anomalySummary={anomalySummary || undefined}
+                  detections={currentDetections}
+                  thermalImageUrl={
+                    // Use annotated overlay image if available, otherwise fallback to raw maintenance image
+                    (() => {
+                      const imageUrl = annotatedImageUrl
+                        ? annotatedImageUrl
+                        : maintenanceImages.length > 0
+                        ? getImageUrl(maintenanceImages[maintenanceImages.length - 1].url)
+                        : undefined
+                      console.log('🖼️ [Thermal Image URL] Using URL for maintenance record:', imageUrl)
+                      console.log('🖼️ [Thermal Image URL] annotatedImageUrl state:', annotatedImageUrl)
+                      return imageUrl
+                    })()
+                  }
+                  existingRecord={maintenanceRecord}
+                  onSave={(record) => {
+                    setMaintenanceRecord(record)
+                    console.log('✅ [Maintenance Record] Saved:', record.id)
+                  }}
+                />
+              </CardContent>
+            )}
+          </Card>
+        )}
       </div>
     </MainLayout>
   )

@@ -13,6 +13,12 @@ import jakarta.persistence.Table;
 @Entity
 @Table(name = "users")
 public class User {
+    // Role constants for role-based access control
+    public static final String ROLE_ADMIN = "ADMIN";
+    public static final String ROLE_ENGINEER = "ENGINEER";
+    public static final String ROLE_INSPECTOR = "INSPECTOR";
+    public static final String ROLE_VIEWER = "VIEWER";
+    
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
@@ -24,7 +30,7 @@ public class User {
     private String password;
 
     @Column
-    private String role = "user";
+    private String role = ROLE_VIEWER; // Default to viewer role for security
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();

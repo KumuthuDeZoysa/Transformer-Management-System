@@ -1,5 +1,7 @@
 // Annotation API client for interactive annotation and feedback
 
+import { tokenManager } from './jwt-token'
+
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080/api'
 
 export interface AnnotationDTO {
@@ -52,6 +54,7 @@ export async function saveAnnotations(request: SaveAnnotationsRequest): Promise<
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
       body: JSON.stringify(request),
     })
@@ -93,6 +96,7 @@ export async function getAnnotationsByDetection(detectionId: string): Promise<An
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
     })
 
@@ -121,6 +125,7 @@ export async function deleteAnnotation(annotationId: string): Promise<boolean> {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
     })
 
@@ -222,6 +227,7 @@ export async function saveAnnotationsRealtime(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
       body: JSON.stringify(request),
     })
@@ -254,6 +260,7 @@ export async function getInspectionAnnotations(inspectionId: string): Promise<An
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...tokenManager.getAuthHeader(),
       },
     })
 
