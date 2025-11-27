@@ -12,4 +12,7 @@ import com.transformer.management.entity.Inspection;
 public interface InspectionRepository extends JpaRepository<Inspection, UUID> {
     // Find inspections by inspection number starting with prefix (for auto-generation)
     List<Inspection> findByInspectionNoStartingWith(String prefix);
+    
+    // Find all inspections ordered by inspected date descending (most recent first)
+    List<Inspection> findAllByOrderByInspectedAtDesc();
 }

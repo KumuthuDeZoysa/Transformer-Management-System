@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Search, Eye, Download, ArrowLeft, Upload, X, Calendar, User, MessageSquare, Camera, RefreshCw } from "lucide-react"
 import Link from "next/link"
+import { transformerApi, imageApi } from "@/lib/backend-api"
 
 // Helper function to construct full image URL from backend
 const getImageUrl = (url: string): string => {
@@ -64,25 +65,24 @@ export default function GalleryPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null)
 
-  // Load from real DB via our API routes
+  // Load from real DB via backend API with JWT authentication
   const loadData = async () => {
     setLoading(true)
     setError(null)
     try {
-      const [tRes, iRes] = await Promise.all([
-        fetch("/api/transformers?limit=500", { cache: "no-store" }),
-        fetch("/api/images", { cache: "no-store" }),
+      // Use direct backend API calls with JWT authentication
+      const [transformers, imagesData] = await Promise.all([
+        transformerApi.getAll(),
+        imageApi.getAll(),
       ])
-      if (!tRes.ok) throw new Error("Failed to load transformers")
-      if (!iRes.ok) throw new Error("Failed to load images")
-      const transformers: DbTransformer[] = await tRes.json()
-  const imagesPayload = await iRes.json()
-  const imagesRows: DbImage[] = Array.isArray(imagesPayload) ? imagesPayload : (imagesPayload.items || [])
+      
+      // Backend returns BackendImage[] directly
+      const imagesRows = imagesData
 
       const tMap = new Map<string, DbTransformer>()
       transformers.forEach((t) => tMap.set(t.id, t))
 
-    const mapped: GalleryImage[] = imagesRows.map((img) => {
+    const mapped: GalleryImage[] = imagesRows.map((img: any) => {
         const t = tMap.get(img.transformer_id || "")
         const code = t?.code || t?.id || img.transformer_id
         const when = img.captured_at ? new Date(img.captured_at) : new Date()

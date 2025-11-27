@@ -4,17 +4,20 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { authApi } from '@/lib/auth-api'
 
 export default function ProfilePage() {
   const router = useRouter()
-  const [user, setUser] = useState<{ username: string } | null>(null)
+  const [user, setUser] = useState<{ username: string; role?: string } | null>(null)
 
   useEffect(() => {
-    fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.json()).then(j => {
-      if (!j?.user) router.replace('/login')
-      else setUser(j.user)
-    })
-  }, [])
+    if (authApi.isAuthenticated()) {
+      const currentUser = authApi.getCurrentUserLocal();
+      setUser(currentUser);
+    } else {
+      router.replace('/login');
+    }
+  }, [router])
 
   return (
     <MainLayout>

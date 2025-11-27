@@ -279,4 +279,54 @@ public class AnomalyController {
             return ResponseEntity.internalServerError().build();
         }
     }
+
+    /**
+     * Update anomaly detection counts after manual annotation edits
+     * PUT /api/anomalies/update-counts/{inspectionId}
+     * Body: { "totalDetections": 5, "criticalCount": 2, "warningCount": 3 }
+     */
+    @PutMapping("/update-counts/{inspectionId}")
+    public ResponseEntity<?> updateAnomalyCounts(
+            @PathVariable String inspectionId,
+            @RequestBody Map<String, Integer> counts) {
+        logger.info("Updating anomaly counts for inspection: {}", inspectionId);
+        
+        try {
+            UUID id = UUID.fromString(inspectionId);
+            
+            Integer totalDetections = counts.get("totalDetections");
+            Integer criticalCount = counts.get("criticalCount");
+            Integer warningCount = counts.get("warningCount");
+            
+            if (totalDetections == null || criticalCount == null || warningCount == null) {
+                return ResponseEntity.badRequest()
+                    .body(Map.of("error", "totalDetections, criticalCount, and warningCount are required"));
+            }
+            
+            AnomalyDetection updated = anomalyDetectionService.updateAnomalyCounts(
+                id, totalDetections, criticalCount, warningCount
+            );
+            
+            if (updated == null) {
+                return ResponseEntity.status(404)
+                    .body(Map.of("error", "No anomaly detection found for inspection " + inspectionId));
+            }
+            
+            logger.info("Successfully updated anomaly counts for inspection: {}", inspectionId);
+            return ResponseEntity.ok(Map.of(
+                "message", "Anomaly counts updated successfully",
+                "totalDetections", updated.getTotalDetections(),
+                "criticalCount", updated.getCriticalCount(),
+                "warningCount", updated.getWarningCount()
+            ));
+            
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(400)
+                .body(Map.of("error", "Invalid inspection ID format"));
+        } catch (Exception e) {
+            logger.error("Error updating anomaly counts: {}", e.getMessage(), e);
+            return ResponseEntity.status(500)
+                .body(Map.of("error", "Failed to update anomaly counts"));
+        }
+    }
 }

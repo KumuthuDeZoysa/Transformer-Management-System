@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Skeleton } from "@/components/ui/skeleton"
+import { transformerApi, imageApi, uploadApi } from "@/lib/backend-api"
 
 interface Transformer {
   id: string
@@ -175,56 +176,47 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
     const load = async () => {
       setLoading(true) // Ensure loading is true at start
       try {
-        // 1) Load transformer by code or uuid from API
-        const res = await fetch(`/api/transformers/${resolvedParams.id}`)
-        if (res.ok) {
-          const t = await res.json()
-          if (cancelled) return
-          const mapped: Transformer = {
-            id: t.code || t.id,
-            poleNo: t.pole_no || '',
-            region: t.region || '',
-            type: (t.type as string) || 'Distribution',
-            capacity: t.capacity || '',
-            location: t.location || '',
-            status: (t.status as string) || 'Normal',
-            lastInspection: t.last_inspection || undefined,
-          }
-          setTransformer(mapped)
-
-          // 2) Load images by transformer uuid (t.id)
-          const ir = await fetch(`/api/images?transformer_id=${encodeURIComponent(t.id)}`)
-          if (ir.ok) {
-            const body = await ir.json()
-            const items = Array.isArray(body) ? body : (body.items || [])
-            const mappedImages: UploadedImage[] = items.map((img: any) => ({
-              id: img.id,
-              transformerId: mapped.id,
-              filename: img.label || img.url?.split('/')?.pop() || 'image',
-              imageType: (img.image_type as 'Baseline' | 'Maintenance') || 'Maintenance',
-              uploader: img.uploader || 'Unknown',
-              uploadDate: img.created_at || img.captured_at || new Date().toISOString(),
-              comments: img.comments || undefined,
-              environmentalCondition: img.environmental_condition || undefined,
-              imageUrl: img.url || '/placeholder.svg',
-              status: (img.status as 'Normal' | 'Warning' | 'Critical') || 'Normal',
-            }))
-            if (!cancelled) setImages(mappedImages)
-          }
-          if (!cancelled) setLoading(false)
-          return
+        // 1) Load transformer by code or uuid from backend API with JWT
+        const t = await transformerApi.getById(resolvedParams.id)
+        if (cancelled) return
+        const mapped: Transformer = {
+          id: t.code || t.id,
+          poleNo: t.poleNo || t.pole_no || '',
+          region: t.region || '',
+          type: (t.type as string) || 'Distribution',
+          capacity: t.capacity || '',
+          location: t.location || '',
+          status: (t.status as string) || 'Normal',
+          lastInspection: t.lastInspection || t.last_inspection || undefined,
         }
-      } catch (error) {
-        console.log('API call failed, falling back to mock data')
-      }
+        setTransformer(mapped)
 
-      // Fallback to mock if DB failed
-      if (cancelled) return
-      const foundTransformer = transformersData.find((t) => t.id === resolvedParams.id)
-      setTransformer(foundTransformer || null)
-      const transformerImages = mockImages.filter((img) => img.transformerId === resolvedParams.id)
-      setImages(transformerImages)
-      setLoading(false)
+        // 2) Load images by transformer uuid from backend API with JWT
+        const items = await imageApi.getByTransformerId(t.id)
+        const mappedImages: UploadedImage[] = items.map((img: any) => ({
+          id: img.id,
+          transformerId: mapped.id,
+          filename: img.label || img.url?.split('/')?.pop() || 'image',
+          imageType: (img.imageType || img.image_type as 'Baseline' | 'Maintenance') || 'Maintenance',
+          uploader: img.uploaderName || img.uploader || 'Unknown',
+          uploadDate: img.createdAt || img.created_at || img.capturedAt || img.captured_at || new Date().toISOString(),
+          comments: img.comments || undefined,
+          environmentalCondition: img.environmentalCondition || img.environmental_condition || undefined,
+          imageUrl: img.url || '/placeholder.svg',
+          status: (img.status as 'Normal' | 'Warning' | 'Critical') || 'Normal',
+        }))
+        if (!cancelled) setImages(mappedImages)
+        if (!cancelled) setLoading(false)
+      } catch (error) {
+        console.error('Failed to load transformer data:', error)
+        // Fallback to mock data if API fails
+        if (cancelled) return
+        const foundTransformer = transformersData.find((t) => t.id === resolvedParams.id)
+        setTransformer(foundTransformer || null)
+        const transformerImages = mockImages.filter((img) => img.transformerId === resolvedParams.id)
+        setImages(transformerImages)
+        setLoading(false)
+      }
     }
     load()
     return () => {
@@ -256,51 +248,38 @@ export default function TransformerDetailsPage({ params }: { params: Promise<{ i
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      // Resolve transformer uuid by fetching again (ensures we have the DB id)
-      const tres = await fetch(`/api/transformers/${resolvedParams.id}`)
-      if (!tres.ok) throw new Error('Transformer not found')
-      const t = await tres.json()
+      // Get transformer from backend API with JWT
+      const t = await transformerApi.getById(resolvedParams.id)
 
-      // Minimal metadata insert; using a placeholder URL unless you wire Storage
-      const body = {
-        transformer_id: t.id, // uuid
+      // Create image metadata using backend API with JWT
+      const imageData = {
+        transformerId: t.id,
         url: '/thermal-image-normal.png',
         label: `thermal-${uploadForm.imageType.toLowerCase()}-${Date.now()}.jpg`,
-        captured_at: new Date().toISOString(),
-        // Optional extra fields if you later add columns:
-        image_type: uploadForm.imageType,
-        uploader: uploadForm.uploader,
-        comments: uploadForm.comments || null,
-        environmental_condition: uploadForm.imageType === 'Baseline' ? uploadForm.environmentalCondition : null,
-        status: 'Normal',
+        capturedAt: new Date().toISOString(),
+        imageType: uploadForm.imageType,
+        uploaderName: uploadForm.uploader,
+        comments: uploadForm.comments || undefined,
+        environmentalCondition: uploadForm.imageType === 'Baseline' ? uploadForm.environmentalCondition : undefined,
       }
-      const res = await fetch('/api/images', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const created = await res.json().catch(() => null)
-      if (!res.ok) throw new Error((created && created.error) || 'Image upload failed')
+      
+      await imageApi.create(imageData)
 
-      // Refresh images
-      const ir = await fetch(`/api/images?transformer_id=${encodeURIComponent(t.id)}`)
-      if (ir.ok) {
-        const body = await ir.json()
-        const items = Array.isArray(body) ? body : (body.items || [])
-        const mappedImages: UploadedImage[] = items.map((img: any) => ({
-          id: img.id,
-          transformerId: (transformer?.id || resolvedParams.id),
-          filename: img.label || img.url?.split('/')?.pop() || 'image',
-          imageType: (img.image_type as 'Baseline' | 'Maintenance') || 'Maintenance',
-          uploader: img.uploader || 'Unknown',
-          uploadDate: img.created_at || img.captured_at || new Date().toISOString(),
-          comments: img.comments || undefined,
-          environmentalCondition: img.environmental_condition || undefined,
-          imageUrl: img.url || '/placeholder.svg',
-          status: (img.status as 'Normal' | 'Warning' | 'Critical') || 'Normal',
-        }))
-        setImages(mappedImages)
-      }
+      // Refresh images from backend API with JWT
+      const items = await imageApi.getByTransformerId(t.id)
+      const mappedImages: UploadedImage[] = items.map((img: any) => ({
+        id: img.id,
+        transformerId: (transformer?.id || resolvedParams.id),
+        filename: img.label || img.url?.split('/')?.pop() || 'image',
+        imageType: (img.imageType || img.image_type as 'Baseline' | 'Maintenance') || 'Maintenance',
+        uploader: img.uploaderName || img.uploader || 'Unknown',
+        uploadDate: img.createdAt || img.created_at || img.capturedAt || img.captured_at || new Date().toISOString(),
+        comments: img.comments || undefined,
+        environmentalCondition: img.environmentalCondition || img.environmental_condition || undefined,
+        imageUrl: img.url || '/placeholder.svg',
+        status: (img.status as 'Normal' | 'Warning' | 'Critical') || 'Normal',
+      }))
+      setImages(mappedImages)
 
       setShowUploadForm(false)
       setUploadForm({ imageType: 'Maintenance', uploader: '', comments: '', environmentalCondition: 'Sunny' })

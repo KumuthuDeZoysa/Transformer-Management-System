@@ -128,7 +128,14 @@ export default function InspectionsPage() {
         setTransformerMap(tMap)
         setTransformers(transformers)
         
-        const mapped: Row[] = ins.map((i) => {
+        // Sort by inspectedAt descending (most recent first) - backend should already sort, but ensure consistency
+        const sortedIns = [...ins].sort((a, b) => {
+          const dateA = new Date(a.inspectedAt).getTime()
+          const dateB = new Date(b.inspectedAt).getTime()
+          return dateB - dateA // Descending order
+        })
+        
+        const mapped: Row[] = sortedIns.map((i) => {
           // Helper to format dates safely
           const formatDate = (dateValue: any): string => {
             if (!dateValue) return '—'
@@ -313,7 +320,15 @@ export default function InspectionsPage() {
       
       // refresh list
       const latest = await backendApi.inspections.getAll()
-      const mapped: Row[] = latest.map((i) => ({
+      
+      // Sort by inspectedAt descending (most recent first)
+      const sortedLatest = [...latest].sort((a, b) => {
+        const dateA = new Date(a.inspectedAt).getTime()
+        const dateB = new Date(b.inspectedAt).getTime()
+        return dateB - dateA
+      })
+      
+      const mapped: Row[] = sortedLatest.map((i) => ({
         id: i.id,
         transformerId: i.transformer?.id ? (transformerMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
         inspectionNo: i.inspectionNo || '—',
@@ -420,7 +435,15 @@ export default function InspectionsPage() {
       }
       
       const latest = await backendApi.inspections.getAll()
-      const mapped: Row[] = latest.map((i) => ({
+      
+      // Sort by inspectedAt descending (most recent first)
+      const sortedLatest = [...latest].sort((a, b) => {
+        const dateA = new Date(a.inspectedAt).getTime()
+        const dateB = new Date(b.inspectedAt).getTime()
+        return dateB - dateA
+      })
+      
+      const mapped: Row[] = sortedLatest.map((i) => ({
         id: i.id,
         transformerId: i.transformer?.id ? (transformerMap.get(i.transformer.id)?.code || i.transformer.id) : 'Unknown',
         inspectionNo: i.inspectionNo || '—',

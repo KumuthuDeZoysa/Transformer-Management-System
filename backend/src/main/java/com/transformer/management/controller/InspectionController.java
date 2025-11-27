@@ -72,8 +72,8 @@ public class InspectionController {
     @GetMapping
     public List<Inspection> getAllInspections() {
         System.out.println("🔍 InspectionController.getAllInspections() called");
-        List<Inspection> inspections = inspectionRepository.findAll();
-        System.out.println("📊 Found " + inspections.size() + " inspections");
+        List<Inspection> inspections = inspectionRepository.findAllByOrderByInspectedAtDesc();
+        System.out.println("📊 Found " + inspections.size() + " inspections (sorted by inspection date descending)");
         
         // Ensure all inspections have valid inspectedAt dates and save them
         boolean needsSave = false;

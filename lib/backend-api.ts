@@ -1,5 +1,7 @@
 // Backend API client for Spring Boot integration
 
+import { tokenManager } from './jwt-token'
+
 export interface CreateImageRequest {
   transformerId: string
   url?: string
@@ -85,6 +87,7 @@ async function apiCall<T>(
   const defaultHeaders = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    ...tokenManager.getAuthHeader(), // Add JWT token to all requests
   }
 
   const config: RequestInit = {
@@ -257,6 +260,9 @@ export const imageApi = {
 
     const response = await fetch(`${BACKEND_BASE_URL}/images/upload`, {
       method: 'POST',
+      headers: {
+        ...tokenManager.getAuthHeader(), // Add JWT token
+      },
       body: formData,
     })
 
@@ -353,9 +359,12 @@ export const uploadApi = {
     if (inspectionId) formData.append('inspection_id', inspectionId)
     if (label) formData.append('label', label)
     
-    // Call Spring Boot backend directly
+    // Call Spring Boot backend directly with JWT token
     const response = await fetch(`${BACKEND_BASE_URL}/images/upload`, {
       method: 'POST',
+      headers: {
+        ...tokenManager.getAuthHeader(), // Add JWT token
+      },
       body: formData,
     })
     
